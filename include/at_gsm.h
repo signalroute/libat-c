@@ -1,0 +1,297 @@
+/**
+ * @file at_gsm.h
+ * @brief GSM/LTE command helpers over the AT engine (3GPP TS 27.007 / 27.005).
+ *
+ * Each helper serialises the appropriate AT command string and enqueues it
+ * through at_send().  Callers are notified via callback exactly as with
+ * raw at_send() calls.
+ *
+ * Command coverage
+ * ================
+ *   General        AT, ATZ, ATE, AT+CMEE, AT+GCAP
+ *   SIM / PIN      AT+CPIN, AT+CLCK, AT+CPWD
+ *   Network        AT+CREG, AT+CGREG, AT+CEREG, AT+COPS, AT+CSQ, AT+CESQ
+ *   Packet data    AT+CGDCONT, AT+CGACT, AT+CGPADDR
+ *   SMS            AT+CMGF, AT+CMGS, AT+CMGR, AT+CMGD, AT+CMGL, AT+CNMI
+ *   Voice calls    ATD, ATA, ATH, AT+CHUP, AT+CLCC
+ *   Clock          AT+CCLK
+ *   USSD           AT+CUSD
+ *   Power          AT+CFUN
+ *   Identification AT+CGSN, AT+CGMI, AT+CGMM, AT+CGMR, AT+CIMI
+ *
+ * SPDX-License-Identifier: MIT
+ */
+#ifndef AT_GSM_H
+#define AT_GSM_H
+
+#include <stdint.h>
+#include <stdbool.h>
+#include "at.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* =========================================================================
+ * Parsed structure types
+ * ========================================================================= */
+
+/** Signal quality from AT+CSQ. */
+typedef struct {
+    int16_t rssi_dbm;   /**< dBm (−113 to −51, or −999 = not known)     */
+    uint8_t ber;        /**< Bit error rate class 0–7, 99 = not known     */
+} at_csq_t;
+
+/** Extended signal quality from AT+CESQ. */
+typedef struct {
+    int16_t rxlev;       /**< GSM received level (0–63, 99=unknown)       */
+    uint8_t ber;         /**< Bit error rate class                        */
+    int16_t rscp;        /**< WCDMA received signal code power            */
+    int16_t ecno;        /**< WCDMA Ec/No                                 */
+    int16_t rsrq;        /**< LTE RSRQ                                    */
+    int16_t rsrp;        /**< LTE RSRP                                    */
+} at_cesq_t;
+
+/** Network registration status from AT+CREG/CGREG/CEREG. */
+typedef enum {
+    AT_REG_NOT        = 0,   /**< Not registered, not searching           */
+    AT_REG_HOME       = 1,   /**< Registered, home network                */
+    AT_REG_SEARCHING  = 2,   /**< Not registered, searching               */
+    AT_REG_DENIED     = 3,   /**< Registration denied                     */
+    AT_REG_UNKNOWN    = 4,   /**< Unknown                                 */
+    AT_REG_ROAMING    = 5,   /**< Registered, roaming                     */
+    AT_REG_HOME_SMS   = 6,   /**< Registered for SMS only, home           */
+    AT_REG_ROAM_SMS   = 7,   /**< Registered for SMS only, roaming        */
+    AT_REG_EMERG      = 8,   /**< Attached for emergency bearer services  */
+} at_reg_status_t;
+
+/** SIM PIN status. */
+typedef enum {
+    AT_CPIN_READY          = 0,
+    AT_CPIN_SIM_PIN        = 1,
+    AT_CPIN_SIM_PUK        = 2,
+    AT_CPIN_PH_SIM_PIN     = 3,
+    AT_CPIN_PH_FSIM_PIN    = 4,
+    AT_CPIN_PH_FSIM_PUK    = 5,
+    AT_CPIN_SIM_PIN2       = 6,
+    AT_CPIN_SIM_PUK2       = 7,
+    AT_CPIN_PH_NET_PIN     = 8,
+    AT_CPIN_PH_NET_PUK     = 9,
+    AT_CPIN_PH_NETSUB_PIN  = 10,
+    AT_CPIN_PH_NETSUB_PUK  = 11,
+    AT_CPIN_PH_SP_PIN      = 12,
+    AT_CPIN_PH_SP_PUK      = 13,
+    AT_CPIN_PH_CORP_PIN    = 14,
+    AT_CPIN_PH_CORP_PUK    = 15,
+    AT_CPIN_UNKNOWN        = 0xFF,
+} at_cpin_t;
+
+/** Operator information from AT+COPS. */
+typedef struct {
+    uint8_t  mode;                  /**< 0=auto,1=manual,2=dereg,4=man+auto  */
+    uint8_t  format;                /**< 0=long,1=short,2=numeric             */
+    char     oper[24];              /**< Operator name/number                 */
+    uint8_t  act;                   /**< Access technology (0=GSM,7=LTE,…)   */
+} at_cops_t;
+
+/** PDP context definition. */
+typedef struct {
+    uint8_t  cid;                   /**< Context identifier 1–15              */
+    char     pdp_type[8];           /**< "IP","IPV6","IPV4V6","PPP"           */
+    char     apn[64];               /**< Access point name                    */
+    char     addr[40];              /**< Requested PDP address (may be empty) */
+} at_cgdcont_t;
+
+/** SMS message (text mode). */
+typedef struct {
+    char     oa[20];                /**< Originating address                  */
+    char     scts[24];              /**< Service centre timestamp             */
+    char     text[161];             /**< Message text (NUL-terminated)        */
+    uint8_t  index;                 /**< Message index in storage             */
+    uint8_t  stat;                  /**< 0=REC UNREAD,1=REC READ,2=STO UNSENT,3=STO SENT */
+} at_sms_t;
+
+/* =========================================================================
+ * Parser helpers (return false on parse failure)
+ * ========================================================================= */
+
+bool at_parse_csq(const at_response_t *resp, at_csq_t *out);
+bool at_parse_cesq(const at_response_t *resp, at_cesq_t *out);
+bool at_parse_creg(const at_response_t *resp, at_reg_status_t *out);
+bool at_parse_cpin(const at_response_t *resp, at_cpin_t *out);
+bool at_parse_cops(const at_response_t *resp, at_cops_t *out);
+bool at_parse_cgpaddr(const at_response_t *resp, uint8_t cid,
+                      char *ip_buf, size_t ip_buf_sz);
+bool at_parse_sms_read(const at_response_t *resp, at_sms_t *out);
+bool at_parse_cmgs(const at_response_t *resp, uint8_t *mr_out);
+
+/* =========================================================================
+ * General
+ * ========================================================================= */
+
+/** Send basic AT (ping). */
+at_result_t at_gsm_at(at_cb_t cb, void *user);
+
+/** Factory reset (ATZ). */
+at_result_t at_gsm_atz(at_cb_t cb, void *user);
+
+/** Echo mode: enable=true → ATE1, false → ATE0. */
+at_result_t at_gsm_echo(bool enable, at_cb_t cb, void *user);
+
+/** Enable extended error codes: mode 0=disabled,1=numeric,2=verbose. */
+at_result_t at_gsm_cmee(uint8_t mode, at_cb_t cb, void *user);
+
+/** Query modem capabilities (AT+GCAP). */
+at_result_t at_gsm_gcap(at_cb_t cb, void *user);
+
+/* =========================================================================
+ * Identification
+ * ========================================================================= */
+
+at_result_t at_gsm_imei(at_cb_t cb, void *user);   /**< AT+CGSN  */
+at_result_t at_gsm_imsi(at_cb_t cb, void *user);   /**< AT+CIMI  */
+at_result_t at_gsm_cgmi(at_cb_t cb, void *user);   /**< Manufacturer  */
+at_result_t at_gsm_cgmm(at_cb_t cb, void *user);   /**< Model         */
+at_result_t at_gsm_cgmr(at_cb_t cb, void *user);   /**< Revision      */
+
+/* =========================================================================
+ * Power
+ * ========================================================================= */
+
+/**
+ * Set phone functionality.
+ * fun: 0=min,1=full,4=disable RF,7=offline
+ * rst: 0=no reset,1=reset before setting
+ */
+at_result_t at_gsm_cfun(uint8_t fun, uint8_t rst, at_cb_t cb, void *user);
+
+/* =========================================================================
+ * SIM / Security
+ * ========================================================================= */
+
+/** Query PIN status. */
+at_result_t at_gsm_cpin_query(at_cb_t cb, void *user);
+
+/** Enter PIN. */
+at_result_t at_gsm_cpin_enter(const char *pin, at_cb_t cb, void *user);
+
+/** Enter PUK and new PIN. */
+at_result_t at_gsm_cpin_puk(const char *puk, const char *new_pin, at_cb_t cb, void *user);
+
+/** Facility lock query/set.  fac e.g. "SC"=SIM, "AO"=BAOC. */
+at_result_t at_gsm_clck_query(const char *fac, at_cb_t cb, void *user);
+at_result_t at_gsm_clck_set(const char *fac, uint8_t mode,
+                             const char *passwd, at_cb_t cb, void *user);
+
+/** Change password. */
+at_result_t at_gsm_cpwd(const char *fac, const char *old_pw,
+                         const char *new_pw, at_cb_t cb, void *user);
+
+/* =========================================================================
+ * Network registration & operator
+ * ========================================================================= */
+
+/** AT+CREG=<n> (0=disable URC,1=enable,2=+lac/ci). */
+at_result_t at_gsm_creg_set(uint8_t n, at_cb_t cb, void *user);
+at_result_t at_gsm_creg_query(at_cb_t cb, void *user);
+
+/** AT+CGREG (GPRS). */
+at_result_t at_gsm_cgreg_set(uint8_t n, at_cb_t cb, void *user);
+at_result_t at_gsm_cgreg_query(at_cb_t cb, void *user);
+
+/** AT+CEREG (EPS / LTE). */
+at_result_t at_gsm_cereg_set(uint8_t n, at_cb_t cb, void *user);
+at_result_t at_gsm_cereg_query(at_cb_t cb, void *user);
+
+/** AT+COPS=? (scan), AT+COPS? (query), AT+COPS=<mode>[,<format>[,<oper>]]. */
+at_result_t at_gsm_cops_query(at_cb_t cb, void *user);
+at_result_t at_gsm_cops_auto(at_cb_t cb, void *user);
+at_result_t at_gsm_cops_manual(const char *oper, uint8_t act,
+                                at_cb_t cb, void *user);
+
+/* =========================================================================
+ * Signal quality
+ * ========================================================================= */
+
+at_result_t at_gsm_csq(at_cb_t cb, void *user);
+at_result_t at_gsm_cesq(at_cb_t cb, void *user);
+
+/* =========================================================================
+ * Clock
+ * ========================================================================= */
+
+/** Query clock (AT+CCLK?). */
+at_result_t at_gsm_cclk_query(at_cb_t cb, void *user);
+
+/** Set clock — time_str format: "yy/MM/dd,hh:mm:ss±zz". */
+at_result_t at_gsm_cclk_set(const char *time_str, at_cb_t cb, void *user);
+
+/* =========================================================================
+ * Packet data (GPRS/LTE)
+ * ========================================================================= */
+
+/** Define PDP context (AT+CGDCONT). */
+at_result_t at_gsm_cgdcont(const at_cgdcont_t *ctx, at_cb_t cb, void *user);
+
+/** Activate/deactivate PDP context (AT+CGACT). */
+at_result_t at_gsm_cgact(uint8_t cid, bool activate, at_cb_t cb, void *user);
+
+/** Query PDP address (AT+CGPADDR). */
+at_result_t at_gsm_cgpaddr(uint8_t cid, at_cb_t cb, void *user);
+
+/* =========================================================================
+ * SMS
+ * ========================================================================= */
+
+/** Set SMS format: 0=PDU, 1=text. */
+at_result_t at_gsm_cmgf(uint8_t mode, at_cb_t cb, void *user);
+
+/**
+ * Send SMS in text mode (AT+CMGS).
+ * Enqueues two commands internally: CMGS header + body via "> " prompt.
+ */
+at_result_t at_gsm_cmgs(const char *number, const char *text,
+                         at_cb_t cb, void *user);
+
+/** Read SMS by index (AT+CMGR). */
+at_result_t at_gsm_cmgr(uint8_t index, at_cb_t cb, void *user);
+
+/** Delete SMS by index (AT+CMGD). stat=0 delete by index, 1-4 all matching status. */
+at_result_t at_gsm_cmgd(uint8_t index, uint8_t delflag, at_cb_t cb, void *user);
+
+/** List SMS (AT+CMGL). stat: "ALL","REC UNREAD","REC READ","STO UNSENT","STO SENT". */
+at_result_t at_gsm_cmgl(const char *stat, at_cb_t cb, void *user);
+
+/** Configure new message indications (AT+CNMI). */
+at_result_t at_gsm_cnmi(uint8_t mode, uint8_t mt, uint8_t bm,
+                         uint8_t ds, uint8_t bfr, at_cb_t cb, void *user);
+
+/* =========================================================================
+ * Voice calls
+ * ========================================================================= */
+
+/** Dial (ATD<number>;  — voice call, ; terminates for voice mode). */
+at_result_t at_gsm_dial(const char *number, bool voice, at_cb_t cb, void *user);
+
+/** Answer (ATA). */
+at_result_t at_gsm_answer(at_cb_t cb, void *user);
+
+/** Hang up (ATH). */
+at_result_t at_gsm_hangup(at_cb_t cb, void *user);
+
+/** List current calls (AT+CLCC). */
+at_result_t at_gsm_clcc(at_cb_t cb, void *user);
+
+/* =========================================================================
+ * USSD
+ * ========================================================================= */
+
+/** Send USSD string (AT+CUSD=1,"<str>",<dcs>). */
+at_result_t at_gsm_cusd(const char *ussd_str, uint8_t dcs,
+                         at_cb_t cb, void *user);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* AT_GSM_H */

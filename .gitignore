@@ -1,0 +1,29 @@
+# libat-c — AT command engine for embedded systems
+
+## Build artifacts
+build/
+*.o
+*.a
+*.so
+*.dylib
+*.exe
+
+## CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+Makefile
+_deps/
+
+## IDE / editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*.DS_Store
+
+## Test runner output
+Testing/
+CTestTestfile.cmake
+test_*.xml
