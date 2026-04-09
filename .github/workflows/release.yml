@@ -1,0 +1,155 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Signalroute
+
+name: Release
+
+on:
+  push:
+    tags: ['v[0-9]*']
+
+permissions:
+  contents: write
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Run full test matrix before publishing the release
+  # ---------------------------------------------------------------------------
+  test-gcc:
+    name: Verify (GCC / Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get install -y gcc cmake ninja-build
+
+      - name: Configure
+        run: |
+          cmake -B build \
+            -DCMAKE_C_COMPILER=gcc \
+            -DCMAKE_BUILD_TYPE=Release \
+            -G Ninja
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  test-clang:
+    name: Verify (Clang / Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get install -y clang cmake ninja-build
+
+      - name: Configure
+        run: |
+          cmake -B build \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_BUILD_TYPE=Release \
+            -G Ninja
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  test-macos:
+    name: Verify (Apple Clang / macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install cmake ninja
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -G Ninja
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  test-msvc:
+    name: Verify (MSVC / Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -G "Visual Studio 17 2022"
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -C Release
+
+  # ---------------------------------------------------------------------------
+  # Build ARM Cortex-M static library and attach as release artifact
+  # ---------------------------------------------------------------------------
+  build-arm-artifact:
+    name: Build ARM artifact
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install arm-none-eabi toolchain
+        run: sudo apt-get install -y gcc-arm-none-eabi cmake ninja-build
+
+      - name: Build libatc for Cortex-M4F
+        run: |
+          cmake -B build-arm \
+            -DCMAKE_C_COMPILER=arm-none-eabi-gcc \
+            -DCMAKE_SYSTEM_NAME=Generic \
+            -DCMAKE_SYSTEM_PROCESSOR=arm \
+            -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
+            -DLIBATC_BUILD_TESTS=OFF \
+            -DLIBATC_BUILD_EXAMPLES=OFF \
+            -DCMAKE_BUILD_TYPE=MinSizeRel \
+            -DCMAKE_C_FLAGS="-mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard" \
+            -G Ninja
+          cmake --build build-arm --target atc --parallel
+
+      - name: Package artifact
+        run: |
+          mkdir -p artifact/include artifact/lib
+          cp -r include/* artifact/include/
+          cp build-arm/libatc.a artifact/lib/
+          tar -czf libatc-${{ github.ref_name }}-cortex-m4f.tar.gz -C artifact .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libatc-cortex-m4f
+          path: libatc-${{ github.ref_name }}-cortex-m4f.tar.gz
+
+  # ---------------------------------------------------------------------------
+  # Publish GitHub release (only after all test jobs succeed)
+  # ---------------------------------------------------------------------------
+  publish:
+    name: Publish Release
+    needs: [test-gcc, test-clang, test-macos, test-msvc, build-arm-artifact]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download ARM artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: libatc-cortex-m4f
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          make_latest: true
+          files: libatc-${{ github.ref_name }}-cortex-m4f.tar.gz

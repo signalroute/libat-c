@@ -1,0 +1,161 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Signalroute
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # SPDX license header check — all C source files must carry MIT identifier
+  # ---------------------------------------------------------------------------
+  license-check:
+    name: License Headers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check SPDX headers
+        run: |
+          missing=0
+          for f in include/*.h src/*.c tests/*.c examples/*.c; do
+            [ -f "$f" ] || continue
+            if ! grep -q "SPDX-License-Identifier: MIT" "$f"; then
+              echo "❌ Missing SPDX header: $f"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 0 ]; then
+            echo "✅ All source files carry SPDX MIT header"
+          fi
+          exit $missing
+
+  # ---------------------------------------------------------------------------
+  # GCC — Ubuntu (release + debug, strict warnings)
+  # ---------------------------------------------------------------------------
+  build-gcc:
+    name: Build & Test (GCC / Ubuntu)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        build_type: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get install -y gcc cmake ninja-build
+
+      - name: Configure
+        run: |
+          cmake -B build \
+            -DCMAKE_C_COMPILER=gcc \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -G Ninja
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  # ---------------------------------------------------------------------------
+  # Clang — Ubuntu
+  # ---------------------------------------------------------------------------
+  build-clang:
+    name: Build & Test (Clang / Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get install -y clang cmake ninja-build
+
+      - name: Configure
+        run: |
+          cmake -B build \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -G Ninja
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  # ---------------------------------------------------------------------------
+  # Apple Clang — macOS (arm64 + x86_64 via macos-latest)
+  # ---------------------------------------------------------------------------
+  build-macos:
+    name: Build & Test (Apple Clang / macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install cmake ninja
+
+      - name: Configure
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -G Ninja
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  # ---------------------------------------------------------------------------
+  # MSVC — Windows (Visual Studio 17 2022)
+  # ---------------------------------------------------------------------------
+  build-msvc:
+    name: Build & Test (MSVC / Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -G "Visual Studio 17 2022"
+
+      - name: Build
+        run: cmake --build build --config Debug --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -C Debug
+
+  # ---------------------------------------------------------------------------
+  # ARM Cortex-M cross-compile (library only — tests run on host)
+  #
+  # Verifies the core engine compiles cleanly for bare-metal targets.
+  # Unity test framework is NOT fetched when LIBATC_BUILD_TESTS=OFF.
+  # ---------------------------------------------------------------------------
+  build-arm:
+    name: Cross-Compile (arm-none-eabi)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install arm-none-eabi toolchain
+        run: sudo apt-get install -y gcc-arm-none-eabi cmake ninja-build
+
+      - name: Configure (bare-metal, no OS)
+        run: |
+          cmake -B build-arm \
+            -DCMAKE_C_COMPILER=arm-none-eabi-gcc \
+            -DCMAKE_SYSTEM_NAME=Generic \
+            -DCMAKE_SYSTEM_PROCESSOR=arm \
+            -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
+            -DLIBATC_BUILD_TESTS=OFF \
+            -DLIBATC_BUILD_EXAMPLES=OFF \
+            -DCMAKE_BUILD_TYPE=MinSizeRel \
+            -DCMAKE_C_FLAGS="-mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard" \
+            -G Ninja
+
+      - name: Build atc (static library)
+        run: cmake --build build-arm --target atc --parallel
