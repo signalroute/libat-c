@@ -93,6 +93,18 @@ if(LIBATC_BUILD_TESTS)
         )
         add_test(NAME ${_t} COMMAND ${_t})
     endforeach()
+
+    # C++ inclusion smoke-test — verifies all public headers have extern "C" guards
+    include(CheckLanguage)
+    check_language(CXX)
+    if(CMAKE_CXX_COMPILER)
+        enable_language(CXX)
+        add_executable(test_cpp_include tests/test_cpp_include.cpp)
+        target_link_libraries(test_cpp_include PRIVATE at::atc)
+        target_compile_features(test_cpp_include PRIVATE cxx_std_11)
+        target_include_directories(test_cpp_include PRIVATE include)
+        add_test(NAME test_cpp_include COMMAND test_cpp_include)
+    endif()
 endif()
 
 # ---------------------------------------------------------------------------

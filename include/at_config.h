@@ -10,6 +10,10 @@
 #ifndef AT_CONFIG_H
 #define AT_CONFIG_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* -------------------------------------------------------------------------
  * Ring-buffer sizes (must be powers of two)
  * ------------------------------------------------------------------------- */
@@ -125,5 +129,9 @@ _Static_assert(AT__IS_POW2(AT_CFG_TX_BUF_SIZE), "AT_CFG_TX_BUF_SIZE must be a po
 _Static_assert(AT_CFG_LINE_MAX >= 8U,            "AT_CFG_LINE_MAX too small");
 _Static_assert(AT_CFG_CMD_QUEUE_DEPTH >= 1U,     "AT_CFG_CMD_QUEUE_DEPTH must be >= 1");
 _Static_assert(AT_CFG_URC_TABLE_SIZE  >= 1U,     "AT_CFG_URC_TABLE_SIZE must be >= 1");
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* AT_CONFIG_H */
