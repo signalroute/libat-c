@@ -26,6 +26,10 @@
 #ifndef AT_FMT_H
 #define AT_FMT_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
@@ -198,5 +202,9 @@ static inline bool at__skip_comma(const char **p)
     while (**p == ' ') (*p)++;
     return true;
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* AT_FMT_H */
