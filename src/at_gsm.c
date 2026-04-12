@@ -498,3 +498,218 @@ at_result_t at_gsm_cusd(const char *ussd_str, uint8_t dcs, at_cb_t cb, void *use
     if (!AB_OK()) return AT_ERR_PARAM;
     return at_send_raw(AB_DONE(), 30000U, cb, user);
 }
+
+/* =========================================================================
+ * GSM-7 encoder
+ * =========================================================================
+ *
+ * GSM 03.38 Basic Character Set.  Each character is 7 bits; 8 characters
+ * pack into 7 bytes (56 bits).  The table maps ASCII / Latin-1 code points
+ * to GSM-7 septet values; unmappable characters are not supported (caller
+ * should pre-screen or use UCS-2 DCS instead).
+ */
+
+/* Returns GSM-7 septet for an ASCII character, or 0xFF if not in alphabet. */
+static uint8_t gsm7_char_to_septet(char c)
+{
+    /* Basic Character Set lookup — GSM 03.38 Table 1 */
+    static const uint8_t lut[128] = {
+        /* 0x00 */ 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+        /* 0x08 */ 0xFF,0xFF,0x0A,0xFF,0xFF,0x0D,0xFF,0xFF,
+        /* 0x10 */ 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+        /* 0x18 */ 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+        /* 0x20 */ 0x20,0x21,0x22,0x23,0x02,0x25,0x26,0x27, /*  !"#$%&' */
+        /* 0x28 */ 0x28,0x29,0x2A,0x2B,0x2C,0x2D,0x2E,0x2F, /* ()*+,-./ */
+        /* 0x30 */ 0x30,0x31,0x32,0x33,0x34,0x35,0x36,0x37, /* 01234567 */
+        /* 0x38 */ 0x38,0x39,0x3A,0x3B,0x3C,0x3D,0x3E,0x3F, /* 89:;<=>? */
+        /* 0x40 */ 0x00,0x41,0x42,0x43,0x44,0x45,0x46,0x47, /* @ABCDEFG */
+        /* 0x48 */ 0x48,0x49,0x4A,0x4B,0x4C,0x4D,0x4E,0x4F, /* HIJKLMNO */
+        /* 0x50 */ 0x50,0x51,0x52,0x53,0x54,0x55,0x56,0x57, /* PQRSTUVW */
+        /* 0x58 */ 0x58,0x59,0x5A,0x3C,0xFF,0x3E,0xFF,0x11, /* XYZ<\>^_ */
+        /* 0x60 */ 0xFF,0x61,0x62,0x63,0x64,0x65,0x66,0x67, /* `abcdefg */
+        /* 0x68 */ 0x68,0x69,0x6A,0x6B,0x6C,0x6D,0x6E,0x6F, /* hijklmno */
+        /* 0x70 */ 0x70,0x71,0x72,0x73,0x74,0x75,0x76,0x77, /* pqrstuvw */
+        /* 0x78 */ 0x78,0x79,0x7A,0xFF,0xFF,0xFF,0xFF,0xFF, /* xyz      */
+    };
+    if ((uint8_t)c >= 128U) return 0xFFU;
+    return lut[(uint8_t)c];
+}
+
+at_gsm7_result_t at_gsm7_encode(const char *text,
+                                  uint8_t    *out,
+                                  size_t      out_sz,
+                                  size_t     *out_len,
+                                  size_t     *n_chars)
+{
+    if (!text || !out || !out_len || !n_chars) return AT_GSM7_ERR_NULL;
+
+    size_t in_len = strlen(text);
+    if (in_len > 160U) return AT_GSM7_ERR_TOO_LONG;
+
+    /* Maximum packed bytes needed: ceil(in_len * 7 / 8) */
+    size_t max_out = (in_len * 7U + 7U) / 8U;
+    if (max_out > out_sz) return AT_GSM7_ERR_BUF_FULL;
+
+    memset(out, 0, max_out);
+
+    size_t bit_pos = 0U;
+    for (size_t i = 0U; i < in_len; i++) {
+        uint8_t sept = gsm7_char_to_septet(text[i]);
+        if (sept == 0xFFU) return AT_GSM7_ERR_CHAR;
+
+        /* Pack 7-bit septet at bit_pos within out[] */
+        size_t byte_off = bit_pos / 8U;
+        size_t bit_off  = bit_pos % 8U;
+
+        out[byte_off] |= (uint8_t)(sept << bit_off);
+        if (bit_off > 1U && byte_off + 1U < out_sz) {
+            out[byte_off + 1U] |= (uint8_t)(sept >> (8U - bit_off));
+        }
+        bit_pos += 7U;
+    }
+
+    *out_len = (bit_pos + 7U) / 8U;
+    *n_chars = in_len;
+    return AT_GSM7_OK;
+}
+
+/* =========================================================================
+ * PDU mode CMGS
+ * ========================================================================= */
+
+/* Encode a phone number (E.164) as GSM semi-octet BCD.
+ * Writes type-of-address byte + BCD digits into buf, returns bytes written.
+ * buf must be at least 12 bytes (1 type + up to 11 BCD bytes for 20 digits).
+ */
+static size_t encode_address(const char *number, uint8_t *buf)
+{
+    /* Skip leading '+' */
+    if (*number == '+') number++;
+    size_t len = strlen(number);
+    if (len > 20U) len = 20U;
+
+    /* Type-of-address: 0x91 = international, 0x81 = unknown */
+    buf[0] = 0x91U; /* assume international E.164 */
+    size_t bcd_bytes = (len + 1U) / 2U;
+    for (size_t i = 0U; i < bcd_bytes; i++) {
+        uint8_t lo = (uint8_t)(number[2U * i]       - '0') & 0x0FU;
+        uint8_t hi = (2U * i + 1U < len)
+                   ? (uint8_t)((number[2U * i + 1U] - '0') & 0x0FU)
+                   : 0x0FU; /* pad odd digit with F */
+        buf[1U + i] = (uint8_t)((hi << 4U) | lo);
+    }
+    return 1U + bcd_bytes;
+}
+
+/* Hex-encode bytes → ASCII hex string in buf. Returns chars written. */
+static size_t hex_encode(const uint8_t *src, size_t src_len, char *buf, size_t buf_sz)
+{
+    static const char hx[] = "0123456789ABCDEF";
+    size_t out = 0U;
+    for (size_t i = 0U; i < src_len && (out + 2U) < buf_sz; i++) {
+        buf[out++] = hx[(src[i] >> 4U) & 0x0FU];
+        buf[out++] = hx[ src[i]        & 0x0FU];
+    }
+    buf[out] = '\0';
+    return out;
+}
+
+at_result_t at_gsm_cmgs_pdu(const char *smsc,
+                              const char *number,
+                              const char *text,
+                              at_cb_t     cb,
+                              void       *user)
+{
+    if (!number || !text) return AT_ERR_PARAM;
+
+    /* ── 1. Build PDU in a local buffer ──────────────────────────────── */
+    /*
+     * PDU layout (SUBMIT, no SMSC, no VP, GSM-7):
+     *   [SMSC info] [MTI|VPF] [MR] [DA len] [DA type] [DA BCD...] [PID] [DCS] [UDL] [UD...]
+     *
+     * SMSC info: if smsc is NULL/"", write 0x00 (use SIM SMSC).
+     *            otherwise: length byte + type + BCD.
+     *
+     * We use a static 256-byte raw PDU buffer.  Maximum:
+     *   1 (smsc=0)  + 1 (mti) + 1 (mr) + 1 (da_len) + 12 (da) +
+     *   1 (pid) + 1 (dcs) + 1 (udl) + 140 (ud) = 159 bytes.
+     */
+    uint8_t pdu[200U];
+    size_t  p = 0U;
+
+    /* SMSC field */
+    if (!smsc || smsc[0] == '\0') {
+        pdu[p++] = 0x00U; /* use stored SMSC */
+    } else {
+        uint8_t smsc_addr[14U];
+        size_t  smsc_len = encode_address(smsc, smsc_addr);
+        pdu[p++] = (uint8_t)smsc_len;
+        memcpy(&pdu[p], smsc_addr, smsc_len);
+        p += smsc_len;
+    }
+
+    /* MTI = SMS-SUBMIT (0x01), no VPF, no SRR, no UDHI, no RP */
+    pdu[p++] = 0x01U;
+
+    /* Message Reference — 0 = let modem assign */
+    pdu[p++] = 0x00U;
+
+    /* Destination Address */
+    {
+        const char *num = number;
+        if (*num == '+') num++;
+        size_t digits = strlen(num);
+        if (digits > 20U) return AT_ERR_PARAM;
+
+        pdu[p++] = (uint8_t)strlen(num); /* length in digits (original, not BCD bytes) */
+        uint8_t da[14U];
+        size_t da_len = encode_address(number, da);
+        memcpy(&pdu[p], da, da_len);
+        p += da_len;
+    }
+
+    /* PID = 0x00 (normal SMS) */
+    pdu[p++] = 0x00U;
+
+    /* DCS = 0x00 (GSM-7, no compression, class 0) */
+    pdu[p++] = 0x00U;
+
+    /* Encode GSM-7 */
+    uint8_t ud[140U];
+    size_t  ud_len = 0U, n_chars = 0U;
+    at_gsm7_result_t grc = at_gsm7_encode(text, ud, sizeof(ud), &ud_len, &n_chars);
+    if (grc != AT_GSM7_OK) return AT_ERR_PARAM;
+
+    /* UDL = number of septets */
+    pdu[p++] = (uint8_t)n_chars;
+
+    /* UD = packed septets */
+    memcpy(&pdu[p], ud, ud_len);
+    p += ud_len;
+
+    /* ── 2. TP-PDU length (bytes after SMSC field, used in AT+CMGS=<n>) */
+    /* tpdu_len = total pdu bytes MINUS the smsc prefix bytes */
+    uint8_t smsc_field_len = pdu[0]; /* 0 = just 1 byte (the 0x00), else 1+smsc_field_len */
+    size_t  smsc_prefix    = 1U + (smsc_field_len == 0U ? 0U : smsc_field_len);
+    size_t  tpdu_len       = p - smsc_prefix;
+
+    /* ── 3. Hex-encode the PDU ──────────────────────────────────────── */
+    char hex[400U + 1U]; /* 200 bytes × 2 hex chars + NUL */
+    hex_encode(pdu, p, hex, sizeof(hex));
+
+    /* ── 4. Build AT+CMGS=<tpdu_len> command ──────────────────────── */
+    char cmd[24U]; AB_INIT(cmd, sizeof(cmd));
+    AB_STR("AT+CMGS="); AB_U32((uint32_t)tpdu_len);
+    if (!AB_OK()) return AT_ERR_PARAM;
+
+    /* ── 5. Enqueue: CMGS header → GSM "> " prompt → hex body + Ctrl-Z */
+    at_cmd_desc_t d = {
+        .cmd        = cmd,
+        .body       = hex, /* engine sends this after the '>' prompt */
+        .timeout_ms = AT_CFG_PROMPT_TIMEOUT_MS,
+        .prompt     = AT_PROMPT_SMS,
+        .cb         = cb,
+        .user       = user,
+    };
+    return at_send(&d);
+}
