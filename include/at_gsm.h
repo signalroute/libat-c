@@ -6,6 +6,16 @@
  * through at_send().  Callers are notified via callback exactly as with
  * raw at_send() calls.
  *
+ * Thread-safety
+ * =============
+ *   All at_gsm_*() helpers call at_send() internally.  They therefore
+ *   share the same threading rules as at_send():
+ *
+ *   • NOT ISR-SAFE — do not call from interrupt context.
+ *   • Call from a single task, OR protect all at_gsm_*() / at_send()
+ *     calls with a mutex if multiple tasks need to issue commands.
+ *   • Completion callbacks are invoked from at_process() (task context).
+ *
  * Command coverage
  * ================
  *   General        AT, ATZ, ATE, AT+CMEE, AT+GCAP

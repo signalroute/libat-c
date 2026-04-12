@@ -25,6 +25,25 @@
  *   The only shared state between ISR and task contexts is the RX ring
  *   buffer, protected by a 1-byte volatile head/tail pair (lock-free SPSC).
  *
+ *   Summary table:
+ *
+ *   Function / facility       │ ISR-safe │ Notes
+ *   ──────────────────────────┼──────────┼─────────────────────────────────
+ *   at_feed()                 │   YES    │ Lock-free SPSC ring buffer write
+ *   at_tick()                 │   YES    │ Single volatile decrement
+ *   at_process()              │   NO     │ Call from one task only
+ *   at_send() / at_send_raw() │   NO     │ Modifies cmd queue; task context
+ *   at_register_urc()         │   NO     │ Modifies URC table; task context
+ *   at_abort() / at_reset()   │   NO     │ Modifies engine state; task context
+ *   at_platform_write()       │   NO     │ Called by engine from task context
+ *
+ *   RTOS usage:
+ *   - Wire the UART RX ISR/DMA callback to at_feed().  No mutex needed.
+ *   - Call at_tick() from a SysTick ISR or a high-priority 1 ms timer task.
+ *   - Call at_process() from a single dedicated AT task or your main loop.
+ *   - Protect concurrent at_send() calls with a mutex if multiple tasks
+ *     must enqueue commands; at_send() itself is NOT re-entrant.
+ *
  * Usage skeleton
  * ==============
  *   1.  Implement at_platform_write() in your BSP.
@@ -162,6 +181,31 @@ extern size_t at_platform_write(const uint8_t *data, size_t len);
 
 /* =========================================================================
  * Core engine API
+ * =========================================================================
+ *
+ * Thread-safety notes
+ * -------------------
+ * The engine is designed for a single-producer / single-consumer (SPSC)
+ * ISR ↔ task split.  The rules are:
+ *
+ *  • at_feed()   — ISR-SAFE.  Uses a lock-free SPSC ring buffer (volatile
+ *                  head/tail with a compiler barrier).  Call freely from any
+ *                  interrupt priority.
+ *
+ *  • at_tick()   — ISR-SAFE.  Performs a single volatile decrement.  Call
+ *                  from SysTick or a high-priority RTOS timer task.
+ *
+ *  • at_process() — NOT ISR-SAFE.  Must be called from exactly one task or
+ *                   the main loop.  Never call from multiple tasks concurrently.
+ *
+ *  • at_send() / at_send_raw() — NOT ISR-SAFE.  Modifies the command queue.
+ *    If multiple tasks need to enqueue commands, guard all at_send*() calls
+ *    with a mutex; at_process() must still run from a single task.
+ *
+ *  • at_register_urc() / at_deregister_urc() — NOT ISR-SAFE.  Call before
+ *    starting at_process() or hold the same mutex as at_send().
+ *
+ *  • at_abort() / at_reset() — NOT ISR-SAFE.  Task context only.
  * ========================================================================= */
 
 /**
