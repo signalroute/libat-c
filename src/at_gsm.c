@@ -21,6 +21,23 @@
  * Internal helpers
  * ========================================================================= */
 
+/**
+ * Validate a phone-number string.
+ * Rejects any character outside [0-9+*#,;] to prevent AT command injection.
+ * Returns false if number is NULL, empty, or contains illegal characters.
+ */
+static bool validate_phone_number(const char *number)
+{
+    if (!number || number[0] == '\0') return false;
+    for (const char *p = number; *p != '\0'; p++) {
+        char c = *p;
+        if (c >= '0' && c <= '9') continue;
+        if (c == '+' || c == '*' || c == '#' || c == ',' || c == ';') continue;
+        return false;
+    }
+    return true;
+}
+
 static const char *resp_find_value(const at_response_t *resp, const char *prefix)
 {
     size_t plen = strlen(prefix);
@@ -415,9 +432,10 @@ at_result_t at_gsm_cmgf(uint8_t mode, at_cb_t cb, void *user)
 
 at_result_t at_gsm_cmgs(const char *number, const char *text, at_cb_t cb, void *user)
 {
-    if (!number || !text)      return AT_ERR_PARAM;
-    if (strlen(number) > 15U)  return AT_ERR_PARAM;
-    if (strlen(text)   > 160U) return AT_ERR_PARAM;
+    if (!number || !text)           return AT_ERR_PARAM;
+    if (!validate_phone_number(number)) return AT_ERR_PARAM;
+    if (strlen(number) > 15U)       return AT_ERR_PARAM;
+    if (strlen(text)   > 160U)      return AT_ERR_PARAM;
     char cmd[32]; AB_INIT(cmd, sizeof(cmd));
     AB_STR("AT+CMGS="); AB_QSTR(number);
     if (!AB_OK()) return AT_ERR_PARAM;
@@ -475,6 +493,7 @@ at_result_t at_gsm_cnmi(uint8_t mode, uint8_t mt, uint8_t bm,
 at_result_t at_gsm_dial(const char *number, bool voice, at_cb_t cb, void *user)
 {
     if (!number) return AT_ERR_PARAM;
+    if (!validate_phone_number(number)) return AT_ERR_PARAM;
     char buf[32]; AB_INIT(buf, sizeof(buf));
     AB_STR("ATD"); AB_STR(number);
     if (voice) AB_CHAR(';');
@@ -621,6 +640,7 @@ at_result_t at_gsm_cmgs_pdu(const char *smsc,
                               void       *user)
 {
     if (!number || !text) return AT_ERR_PARAM;
+    if (!validate_phone_number(number)) return AT_ERR_PARAM;
 
     /* ── 1. Build PDU in a local buffer ──────────────────────────────── */
     /*
