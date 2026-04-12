@@ -424,6 +424,7 @@ const char *at_result_str(at_result_t r)
     case AT_ERR_PARAM:     return "PARAM";
     case AT_ERR_OVERFLOW:  return "OVERFLOW";
     case AT_ERR_ABORTED:   return "ABORTED";
+    case AT_ERR_IO:        return "IO ERROR";
     case AT_PENDING:       return "PENDING";
     default:               return "UNKNOWN";
     }
@@ -453,10 +454,15 @@ static void engine_start_next(void)
     /* Set timeout */
     g_at.timer_ms = e->timeout_ms;
 
-    /* Transmit command + \r */
+    /* Transmit command + \r; abort with AT_ERR_IO if the HAL reports failure */
     g_at.state = AT_STATE_SENDING;
-    at_platform_write((const uint8_t *)e->cmd, strlen(e->cmd));
-    at_platform_write((const uint8_t *)"\r", 1U);
+    size_t cmd_len = strlen(e->cmd);
+    if (at_platform_write((const uint8_t *)e->cmd, cmd_len) != cmd_len ||
+        at_platform_write((const uint8_t *)"\r", 1U) != 1U)
+    {
+        engine_finalize(AT_ERR_IO, 0);
+        return;
+    }
 
     g_at.state = AT_STATE_WAITING;
     AT_CFG_LOG(2, "sent: %s", e->cmd);
@@ -490,9 +496,14 @@ static void engine_dispatch_line(const char *line, uint16_t len)
         if (e->prompt == AT_PROMPT_SMS && e->has_body) {
             g_at.state    = AT_STATE_PROMPT;
             g_at.timer_ms = AT_CFG_PROMPT_TIMEOUT_MS;
-            /* Send body + Ctrl-Z */
-            at_platform_write((const uint8_t *)e->body, strlen(e->body));
-            at_platform_write((const uint8_t *)"\x1A", 1U);
+            /* Send body + Ctrl-Z; abort with AT_ERR_IO if HAL fails */
+            size_t body_len = strlen(e->body);
+            if (at_platform_write((const uint8_t *)e->body, body_len) != body_len ||
+                at_platform_write((const uint8_t *)"\x1A", 1U) != 1U)
+            {
+                engine_finalize(AT_ERR_IO, 0);
+                return;
+            }
             g_at.state = AT_STATE_WAITING;
         }
         return;

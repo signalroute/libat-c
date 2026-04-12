@@ -63,6 +63,7 @@ typedef enum {
     AT_ERR_PARAM    =  6,  /**< Bad argument to API call                */
     AT_ERR_OVERFLOW =  7,  /**< Response buffer overflowed              */
     AT_ERR_ABORTED  =  8,  /**< Command aborted by at_abort()           */
+    AT_ERR_IO       =  9,  /**< at_platform_write() reported a failure  */
     AT_PENDING      = 99,  /**< Internal: command in progress           */
 } at_result_t;
 
