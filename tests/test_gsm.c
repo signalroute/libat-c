@@ -484,6 +484,39 @@ void test_gsm_dial_null_number_returns_param_error(void)
 }
 
 /* =========================================================================
+ * AT injection sanitization tests
+ * ========================================================================= */
+
+void test_dial_rejects_injection(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_dial("+1234\r\nATH", true, NULL, NULL));
+}
+
+void test_cmgs_rejects_injection(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_cmgs("+1\nATH", "hello", NULL, NULL));
+}
+
+void test_cmgs_pdu_rejects_injection(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_cmgs_pdu(NULL, "+1\nATH", "hello", NULL, NULL));
+}
+
+void test_dial_accepts_valid_number(void)
+{
+    at_result_t rc = at_gsm_dial("+491711234567", true, NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    drain_and_complete();
+}
+
+void test_dial_accepts_star_hash(void)
+{
+    at_result_t rc = at_gsm_dial("*100#", false, NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    drain_and_complete();
+}
+
+/* =========================================================================
  * GSM-7 encoder tests
  * ========================================================================= */
 
@@ -680,6 +713,13 @@ int main(void)
     /* Null guards */
     RUN_TEST(test_gsm_cmgs_null_returns_param_error);
     RUN_TEST(test_gsm_dial_null_number_returns_param_error);
+
+    /* AT injection sanitization */
+    RUN_TEST(test_dial_rejects_injection);
+    RUN_TEST(test_cmgs_rejects_injection);
+    RUN_TEST(test_cmgs_pdu_rejects_injection);
+    RUN_TEST(test_dial_accepts_valid_number);
+    RUN_TEST(test_dial_accepts_star_hash);
 
     /* at_gsm7_encode */
     RUN_TEST(test_gsm7_encode_hello);
