@@ -253,6 +253,58 @@ at_result_t at_gsm_cmgf(uint8_t mode, at_cb_t cb, void *user);
 at_result_t at_gsm_cmgs(const char *number, const char *text,
                          at_cb_t cb, void *user);
 
+/* =========================================================================
+ * PDU mode SMS
+ * ========================================================================= */
+
+/**
+ * GSM-7 alphabet encoder result codes.
+ */
+typedef enum {
+    AT_GSM7_OK           = 0,  /**< Encoding succeeded                    */
+    AT_GSM7_ERR_NULL     = 1,  /**< NULL input or output pointer          */
+    AT_GSM7_ERR_TOO_LONG = 2,  /**< Input exceeds 160 characters          */
+    AT_GSM7_ERR_BUF_FULL = 3,  /**< Output buffer too small               */
+    AT_GSM7_ERR_CHAR     = 4,  /**< Character not in GSM-7 alphabet       */
+} at_gsm7_result_t;
+
+/**
+ * Encode a NUL-terminated ASCII/GSM-7 string into packed GSM-7 septets.
+ *
+ * @param text     Input string (ASCII, GSM-7 subset).
+ * @param out      Output buffer for packed bytes.
+ * @param out_sz   Size of @p out in bytes.
+ * @param out_len  Bytes written to @p out (packed byte count, not septets).
+ * @param n_chars  Number of GSM-7 characters encoded (septet count).
+ * @return AT_GSM7_OK on success, error code otherwise.
+ *
+ * Maximum output: ceil(160 * 7 / 8) = 140 bytes → out_sz >= 140 suffices.
+ */
+at_gsm7_result_t at_gsm7_encode(const char *text,
+                                  uint8_t    *out,
+                                  size_t      out_sz,
+                                  size_t     *out_len,
+                                  size_t     *n_chars);
+
+/**
+ * Send SMS in PDU mode (AT+CMGF=0 must be active).
+ *
+ * Builds a minimal SUBMIT PDU (no SMSC number, TP-DA from @p number,
+ * TP-DCS=0x00 for GSM-7, TP-VP absent) and issues AT+CMGS=<tpdu_len>.
+ *
+ * @param smsc    SMSC address string (E.164, e.g. "+4912345678").
+ *                Pass NULL or "" to use the SIM's stored SMSC.
+ * @param number  Destination number (E.164).
+ * @param text    Message text (GSM-7 printable, max 160 chars).
+ * @param cb      Completion callback.
+ * @param user    User data for @p cb.
+ */
+at_result_t at_gsm_cmgs_pdu(const char *smsc,
+                              const char *number,
+                              const char *text,
+                              at_cb_t     cb,
+                              void       *user);
+
 /** Read SMS by index (AT+CMGR). */
 at_result_t at_gsm_cmgr(uint8_t index, at_cb_t cb, void *user);
 

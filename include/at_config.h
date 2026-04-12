@@ -19,18 +19,27 @@
 #  define AT_CFG_RX_BUF_SIZE  512U
 #endif
 
-/** TX scratch buffer for command serialisation. */
+/** TX scratch buffer for command serialisation.
+ *
+ * A PDU-mode SMS for 160 GSM-7 characters requires up to 140 PDU bytes,
+ * encoded as 280 hex characters, plus the AT+CMGS=<len>\\r prefix (~16 bytes).
+ * 256 bytes truncates long messages — use 512 as the safe minimum.
+ */
 #ifndef AT_CFG_TX_BUF_SIZE
-#  define AT_CFG_TX_BUF_SIZE  256U
+#  define AT_CFG_TX_BUF_SIZE  512U
 #endif
 
 /* -------------------------------------------------------------------------
  * Response accumulation
  * ------------------------------------------------------------------------- */
 
-/** Maximum single-line length (including \r\n). */
+/** Maximum single-line length (including \r\n).
+ *
+ * A PDU DELIVER line (+CMT: ...) can be up to 280 hex chars + overhead.
+ * 128 bytes is too small — set to 320 to handle the longest PDU lines.
+ */
 #ifndef AT_CFG_LINE_MAX
-#  define AT_CFG_LINE_MAX     128U
+#  define AT_CFG_LINE_MAX     320U
 #endif
 
 /**

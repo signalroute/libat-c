@@ -484,6 +484,134 @@ void test_gsm_dial_null_number_returns_param_error(void)
 }
 
 /* =========================================================================
+ * GSM-7 encoder tests
+ * ========================================================================= */
+
+void test_gsm7_encode_hello(void)
+{
+    uint8_t out[20];
+    size_t out_len = 0, n_chars = 0;
+    at_gsm7_result_t rc = at_gsm7_encode("Hello", out, sizeof(out), &out_len, &n_chars);
+    TEST_ASSERT_EQUAL_INT(AT_GSM7_OK, rc);
+    TEST_ASSERT_EQUAL_size_t(5, n_chars);
+    /* "Hello" in GSM-7 packed:
+     * H=0x48, e=0x65, l=0x6C, l=0x6C, o=0x6F
+     * packed: E8329BFD06  (5 chars → ceil(5*7/8)=5 bytes) */
+    TEST_ASSERT_EQUAL_size_t(5, out_len);
+    TEST_ASSERT_EQUAL_HEX8(0xC8, out[0]);
+    TEST_ASSERT_EQUAL_HEX8(0x32, out[1]);
+    TEST_ASSERT_EQUAL_HEX8(0x9B, out[2]);
+    TEST_ASSERT_EQUAL_HEX8(0xFD, out[3]);
+    TEST_ASSERT_EQUAL_HEX8(0x06, out[4]);
+}
+
+void test_gsm7_encode_empty_string(void)
+{
+    uint8_t out[4];
+    size_t out_len = 0, n_chars = 0;
+    at_gsm7_result_t rc = at_gsm7_encode("", out, sizeof(out), &out_len, &n_chars);
+    TEST_ASSERT_EQUAL_INT(AT_GSM7_OK, rc);
+    TEST_ASSERT_EQUAL_size_t(0, n_chars);
+    TEST_ASSERT_EQUAL_size_t(0, out_len);
+}
+
+void test_gsm7_encode_null_input(void)
+{
+    uint8_t out[4];
+    size_t out_len = 0, n_chars = 0;
+    at_gsm7_result_t rc = at_gsm7_encode(NULL, out, sizeof(out), &out_len, &n_chars);
+    TEST_ASSERT_EQUAL_INT(AT_GSM7_ERR_NULL, rc);
+}
+
+void test_gsm7_encode_null_output(void)
+{
+    size_t out_len = 0, n_chars = 0;
+    at_gsm7_result_t rc = at_gsm7_encode("Hi", NULL, 0, &out_len, &n_chars);
+    TEST_ASSERT_EQUAL_INT(AT_GSM7_ERR_NULL, rc);
+}
+
+void test_gsm7_encode_too_long(void)
+{
+    /* 161 characters — one over the SMS limit */
+    char text[162];
+    memset(text, 'A', 161);
+    text[161] = '\0';
+    uint8_t out[150];
+    size_t out_len = 0, n_chars = 0;
+    at_gsm7_result_t rc = at_gsm7_encode(text, out, sizeof(out), &out_len, &n_chars);
+    TEST_ASSERT_EQUAL_INT(AT_GSM7_ERR_TOO_LONG, rc);
+}
+
+void test_gsm7_encode_160_chars(void)
+{
+    char text[161];
+    memset(text, 'A', 160);
+    text[160] = '\0';
+    uint8_t out[150];
+    size_t out_len = 0, n_chars = 0;
+    at_gsm7_result_t rc = at_gsm7_encode(text, out, sizeof(out), &out_len, &n_chars);
+    TEST_ASSERT_EQUAL_INT(AT_GSM7_OK, rc);
+    TEST_ASSERT_EQUAL_size_t(160, n_chars);
+    TEST_ASSERT_EQUAL_size_t(140, out_len); /* ceil(160*7/8) = 140 */
+}
+
+void test_gsm7_encode_buf_too_small(void)
+{
+    uint8_t out[2]; /* way too small for "Hello" */
+    size_t out_len = 0, n_chars = 0;
+    at_gsm7_result_t rc = at_gsm7_encode("Hello World", out, sizeof(out), &out_len, &n_chars);
+    TEST_ASSERT_EQUAL_INT(AT_GSM7_ERR_BUF_FULL, rc);
+}
+
+void test_gsm7_encode_digits_and_spaces(void)
+{
+    uint8_t out[20];
+    size_t out_len = 0, n_chars = 0;
+    at_gsm7_result_t rc = at_gsm7_encode("0123", out, sizeof(out), &out_len, &n_chars);
+    TEST_ASSERT_EQUAL_INT(AT_GSM7_OK, rc);
+    TEST_ASSERT_EQUAL_size_t(4, n_chars);
+    /* '0'=0x30,'1'=0x31,'2'=0x32,'3'=0x33 packed */
+    TEST_ASSERT_EQUAL_size_t(4, out_len);
+    /* Byte 0: '0'[6:0]=0x30 → bits 0..6 = 0x30 */
+    TEST_ASSERT_EQUAL_HEX8(0xB0, out[0]); /* 0x30 | (0x31<<7 & 0xFF) = 0xB0 */
+}
+
+void test_gsm7_encode_at_sign(void)
+{
+    /* '@' maps to GSM-7 code 0x00 (first entry) */
+    uint8_t out[4];
+    size_t out_len = 0, n_chars = 0;
+    at_gsm7_result_t rc = at_gsm7_encode("@", out, sizeof(out), &out_len, &n_chars);
+    TEST_ASSERT_EQUAL_INT(AT_GSM7_OK, rc);
+    TEST_ASSERT_EQUAL_size_t(1, n_chars);
+    TEST_ASSERT_EQUAL_HEX8(0x00, out[0]);
+}
+
+/* =========================================================================
+ * PDU CMGS tests
+ * ========================================================================= */
+
+void test_pdu_cmgs_null_number(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_cmgs_pdu(NULL, NULL, "hi", NULL, NULL));
+}
+
+void test_pdu_cmgs_null_text(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_cmgs_pdu(NULL, "+491234", NULL, NULL, NULL));
+}
+
+void test_pdu_cmgs_enqueues_command(void)
+{
+    /* setUp() already called at_init() and cleared s_tx_buf */
+    at_result_t rc = at_gsm_cmgs_pdu(NULL, "+491234567890", "Hello", NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    /* Command should start with AT+CMGS= */
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CMGS="));
+}
+
+/* =========================================================================
  * Test runner
  * ========================================================================= */
 
@@ -552,6 +680,22 @@ int main(void)
     /* Null guards */
     RUN_TEST(test_gsm_cmgs_null_returns_param_error);
     RUN_TEST(test_gsm_dial_null_number_returns_param_error);
+
+    /* at_gsm7_encode */
+    RUN_TEST(test_gsm7_encode_hello);
+    RUN_TEST(test_gsm7_encode_empty_string);
+    RUN_TEST(test_gsm7_encode_null_input);
+    RUN_TEST(test_gsm7_encode_null_output);
+    RUN_TEST(test_gsm7_encode_too_long);
+    RUN_TEST(test_gsm7_encode_160_chars);
+    RUN_TEST(test_gsm7_encode_buf_too_small);
+    RUN_TEST(test_gsm7_encode_digits_and_spaces);
+    RUN_TEST(test_gsm7_encode_at_sign);
+
+    /* at_gsm_cmgs_pdu */
+    RUN_TEST(test_pdu_cmgs_null_number);
+    RUN_TEST(test_pdu_cmgs_null_text);
+    RUN_TEST(test_pdu_cmgs_enqueues_command);
 
     return UNITY_END();
 }
