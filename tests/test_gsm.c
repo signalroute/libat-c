@@ -785,6 +785,85 @@ void test_pdu_cmgs_enqueues_command(void)
 }
 
 /* =========================================================================
+ * at_gsm_part_count and at_gsm_send_long tests
+ * ========================================================================= */
+
+/* Build a string of exactly `n` ASCII 'A' chars */
+static void fill_str(char *buf, size_t n)
+{
+    for (size_t i = 0U; i < n; i++) buf[i] = 'A';
+    buf[n] = '\0';
+}
+
+void test_part_count_short_message(void)
+{
+    TEST_ASSERT_EQUAL_UINT8(1, at_gsm_part_count("Hello World"));
+}
+
+void test_part_count_exactly_160(void)
+{
+    char msg[161]; fill_str(msg, 160);
+    TEST_ASSERT_EQUAL_UINT8(1, at_gsm_part_count(msg));
+}
+
+void test_part_count_161_needs_two_parts(void)
+{
+    char msg[162]; fill_str(msg, 161);
+    TEST_ASSERT_EQUAL_UINT8(2, at_gsm_part_count(msg));
+}
+
+void test_part_count_306_needs_two_parts(void)
+{
+    /* 2 × 153 = 306 */
+    char msg[307]; fill_str(msg, 306);
+    TEST_ASSERT_EQUAL_UINT8(2, at_gsm_part_count(msg));
+}
+
+void test_part_count_307_needs_three_parts(void)
+{
+    char msg[308]; fill_str(msg, 307);
+    TEST_ASSERT_EQUAL_UINT8(3, at_gsm_part_count(msg));
+}
+
+void test_part_count_null_returns_zero(void)
+{
+    TEST_ASSERT_EQUAL_UINT8(0, at_gsm_part_count(NULL));
+}
+
+void test_part_count_invalid_char_returns_zero(void)
+{
+    TEST_ASSERT_EQUAL_UINT8(0, at_gsm_part_count("hello [world]"));
+}
+
+void test_send_long_short_delegates_to_pdu(void)
+{
+    /* Short message — should succeed and enqueue one AT+CMGS= */
+    at_result_t rc = at_gsm_send_long(NULL, "+491234567890", "Hello", 0x42, NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CMGS="));
+}
+
+void test_send_long_null_number_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM,
+        at_gsm_send_long(NULL, NULL, "Hi", 1, NULL, NULL));
+}
+
+void test_send_long_multipart_enqueues_two_cmgs(void)
+{
+    /* Build a 200-char message (needs 2 parts: 153 + 47) */
+    char msg[201]; fill_str(msg, 200);
+
+    at_result_t rc = at_gsm_send_long(NULL, "+491234567890", msg, 0x01, NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+
+    /* Process first part — should see AT+CMGS= */
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CMGS="));
+}
+
+/* =========================================================================
  * Test runner
  * ========================================================================= */
 
@@ -899,6 +978,18 @@ int main(void)
     RUN_TEST(test_gsm7_decode_buf_too_small);
     RUN_TEST(test_gsm7_decode_roundtrip);
     RUN_TEST(test_gsm7_decode_space);
+
+    /* at_gsm_part_count and at_gsm_send_long */
+    RUN_TEST(test_part_count_short_message);
+    RUN_TEST(test_part_count_exactly_160);
+    RUN_TEST(test_part_count_161_needs_two_parts);
+    RUN_TEST(test_part_count_306_needs_two_parts);
+    RUN_TEST(test_part_count_307_needs_three_parts);
+    RUN_TEST(test_part_count_null_returns_zero);
+    RUN_TEST(test_part_count_invalid_char_returns_zero);
+    RUN_TEST(test_send_long_short_delegates_to_pdu);
+    RUN_TEST(test_send_long_null_number_returns_param);
+    RUN_TEST(test_send_long_multipart_enqueues_two_cmgs);
 
     return UNITY_END();
 }

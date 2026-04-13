@@ -794,3 +794,167 @@ at_result_t at_gsm_cmgs_pdu(const char *smsc,
     };
     return at_send(&d);
 }
+
+/* =========================================================================
+ * Multi-part (concatenated) SMS — 3GPP TS 23.040 §9.2.3.24.1
+ * ========================================================================= */
+
+#define GSM7_SINGLE_MAX 160U   /* max chars in a single-part SMS */
+#define GSM7_CONCAT_MAX 153U   /* max chars per part when UDH is present */
+#define UDH_BYTES       6U     /* UDH: 05 00 03 <ref> <total> <part> */
+
+uint8_t at_gsm_part_count(const char *text)
+{
+    if (!text) return 0U;
+    size_t len = strlen(text);
+    if (len == 0U) return 1U;
+
+    /* Validate GSM-7 */
+    for (size_t i = 0U; i < len; i++) {
+        if (gsm7_char_to_septet(text[i]) == 0xFFU) return 0U;
+    }
+
+    if (len <= GSM7_SINGLE_MAX) return 1U;
+    return (uint8_t)((len + GSM7_CONCAT_MAX - 1U) / GSM7_CONCAT_MAX);
+}
+
+/*
+ * Build one concatenated PDU part and enqueue it.
+ *
+ * pdu_buf / hex_buf are caller-provided scratch (≥220 and ≥440+1 bytes).
+ */
+static at_result_t send_concat_part(const char *smsc,
+                                     const char *number,
+                                     const char *seg_text,
+                                     size_t      seg_len,
+                                     uint8_t     ref_id,
+                                     uint8_t     total_parts,
+                                     uint8_t     part_num,   /* 1-based */
+                                     at_cb_t     cb,
+                                     void       *user)
+{
+    uint8_t pdu[220U];
+    size_t  p = 0U;
+
+    /* SMSC */
+    if (!smsc || smsc[0] == '\0') {
+        pdu[p++] = 0x00U;
+    } else {
+        uint8_t smsc_addr[14U];
+        size_t  smsc_len = encode_address(smsc, smsc_addr);
+        pdu[p++] = (uint8_t)smsc_len;
+        memcpy(&pdu[p], smsc_addr, smsc_len);
+        p += smsc_len;
+    }
+
+    /* MTI = 0x01 (SUBMIT), UDHI = 0x40 (UDH present), no VPF */
+    pdu[p++] = (uint8_t)(0x01U | 0x40U);
+
+    /* Message Reference */
+    pdu[p++] = 0x00U;
+
+    /* Destination Address */
+    {
+        const char *num = number;
+        if (*num == '+') num++;
+        size_t digits = strlen(num);
+        if (digits > 20U) return AT_ERR_PARAM;
+        pdu[p++] = (uint8_t)digits;
+        uint8_t da[14U];
+        size_t  da_len = encode_address(number, da);
+        memcpy(&pdu[p], da, da_len);
+        p += da_len;
+    }
+
+    /* PID, DCS */
+    pdu[p++] = 0x00U;
+    pdu[p++] = 0x00U;
+
+    /* UDH: 05 00 03 <ref> <total> <part> */
+    size_t udh_start = p;
+    pdu[p++] = 0x05U;             /* UDH length (5 bytes follow) */
+    pdu[p++] = 0x00U;             /* IEI = Concatenated SM (8-bit ref) */
+    pdu[p++] = 0x03U;             /* IE data length */
+    pdu[p++] = ref_id;
+    pdu[p++] = total_parts;
+    pdu[p++] = part_num;
+    (void)udh_start;
+
+    /* Copy segment text to a NUL-terminated buffer for at_gsm7_encode */
+    char seg_buf[GSM7_CONCAT_MAX + 1U];
+    if (seg_len > GSM7_CONCAT_MAX) seg_len = GSM7_CONCAT_MAX;
+    memcpy(seg_buf, seg_text, seg_len);
+    seg_buf[seg_len] = '\0';
+
+    /* GSM-7 encode.  With UDH the packing starts at bit offset 0 of the UD
+     * field (UDH is treated as fill bytes for septets purposes per §9.2.3.24.1).
+     * For simplicity we pad UDH to full septets by pre-filling the UD buffer. */
+    uint8_t ud[153U];
+    size_t  ud_len = 0U, n_chars = 0U;
+    at_gsm7_result_t grc = at_gsm7_encode(seg_buf, ud, sizeof(ud), &ud_len, &n_chars);
+    if (grc != AT_GSM7_OK) return AT_ERR_PARAM;
+
+    /* UDL = UDH septets + text septets.
+     * UDH of 6 bytes occupies ceil(6×8/7) = 7 septets. */
+    uint8_t udh_septets = 7U;
+    pdu[p++] = (uint8_t)(udh_septets + n_chars);
+
+    memcpy(&pdu[p], ud, ud_len);
+    p += ud_len;
+
+    /* TPDU length */
+    uint8_t smsc_field_len  = pdu[0];
+    size_t  smsc_prefix     = 1U + (smsc_field_len == 0U ? 0U : smsc_field_len);
+    size_t  tpdu_len        = p - smsc_prefix;
+
+    char hex[441U];
+    hex_encode(pdu, p, hex, sizeof(hex));
+
+    char cmd[24U]; AB_INIT(cmd, sizeof(cmd));
+    AB_STR("AT+CMGS="); AB_U32((uint32_t)tpdu_len);
+    if (!AB_OK()) return AT_ERR_PARAM;
+
+    at_cmd_desc_t d = {
+        .cmd        = cmd,
+        .body       = hex,
+        .timeout_ms = AT_CFG_PROMPT_TIMEOUT_MS,
+        .prompt     = AT_PROMPT_SMS,
+        .cb         = cb,
+        .user       = user,
+    };
+    return at_send(&d);
+}
+
+at_result_t at_gsm_send_long(const char *smsc,
+                              const char *number,
+                              const char *text,
+                              uint8_t     ref_id,
+                              at_cb_t     cb,
+                              void       *user)
+{
+    if (!number || !text) return AT_ERR_PARAM;
+    if (!validate_phone_number(number)) return AT_ERR_PARAM;
+
+    size_t  total_len  = strlen(text);
+    uint8_t n_parts    = at_gsm_part_count(text);
+    if (n_parts == 0U) return AT_ERR_PARAM;   /* invalid chars */
+
+    if (n_parts == 1U) {
+        /* No UDH needed — delegate to normal PDU send */
+        return at_gsm_cmgs_pdu(smsc, number, text, cb, user);
+    }
+
+    /* Multi-part: enqueue each segment */
+    for (uint8_t i = 0U; i < n_parts; i++) {
+        size_t offset   = (size_t)i * GSM7_CONCAT_MAX;
+        size_t seg_len  = total_len - offset;
+        if (seg_len > GSM7_CONCAT_MAX) seg_len = GSM7_CONCAT_MAX;
+
+        at_result_t rc = send_concat_part(smsc, number,
+                                           text + offset, seg_len,
+                                           ref_id, n_parts, (uint8_t)(i + 1U),
+                                           cb, user);
+        if (rc != AT_OK) return rc;
+    }
+    return AT_OK;
+}

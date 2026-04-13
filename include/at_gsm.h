@@ -360,6 +360,48 @@ at_result_t at_gsm_cnmi(uint8_t mode, uint8_t mt, uint8_t bm,
                          uint8_t ds, uint8_t bfr, at_cb_t cb, void *user);
 
 /* =========================================================================
+ * Multi-part (concatenated) SMS — 3GPP TS 23.040 §9.2.3.24.1
+ * ========================================================================= */
+
+/** Maximum number of PDU parts for a single long SMS (up to 255 × 153 chars). */
+#define AT_GSM_MAX_PARTS 8U
+
+/**
+ * Split and send a long message as concatenated SMS PDUs (PDU mode).
+ *
+ * Messages longer than 160 GSM-7 chars are automatically split into
+ * 153-char segments with a User Data Header (UDH) for reassembly.
+ * Messages ≤ 160 chars are sent as a single-part PDU (no UDH).
+ *
+ * All parts share the same @p ref_id (concatenation reference number).
+ * The caller must ensure @p ref_id is unique per destination per session.
+ *
+ * @param smsc    SMSC address (E.164) or NULL/"" for SIM default.
+ * @param number  Destination number (E.164).
+ * @param text    Message text (GSM-7 printable, max 153 × AT_GSM_MAX_PARTS chars).
+ * @param ref_id  Concatenation reference number (0–255); unique per message.
+ * @param cb      Completion callback (called once per part).
+ * @param user    User data for @p cb.
+ * @return AT_OK if all parts were enqueued successfully; AT_ERR_PARAM on bad args;
+ *         AT_ERR_BUSY if the queue cannot fit all parts.
+ */
+at_result_t at_gsm_send_long(const char *smsc,
+                              const char *number,
+                              const char *text,
+                              uint8_t     ref_id,
+                              at_cb_t     cb,
+                              void       *user);
+
+/**
+ * Return the number of PDU parts required to send @p text.
+ *
+ * @param text  NUL-terminated GSM-7 string.
+ * @return      1 for ≤160 chars; ceil(len/153) for longer; 0 on NULL or
+ *              if any character is outside the GSM-7 basic set.
+ */
+uint8_t at_gsm_part_count(const char *text);
+
+/* =========================================================================
  * Voice calls
  * ========================================================================= */
 
