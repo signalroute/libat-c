@@ -15,6 +15,7 @@
 
 #include "unity.h"
 #include "at.h"
+#include "at_platform.h"
 
 #include <string.h>
 #include <stdint.h>
@@ -666,6 +667,25 @@ void test_deinit_then_reinit_works(void)
     TEST_ASSERT_EQUAL_INT(AT_OK, s_last_status);
 }
 
+void test_platform_defaults_do_not_crash(void)
+{
+    /* Smoke-test the weak default implementations */
+    uint32_t t = at_platform_time_ms();
+    (void)t; /* may be 0 — that's the default */
+
+    at_platform_delay_ms(0);   /* must not hang */
+    at_platform_delay_ms(1);   /* must not hang */
+
+    AT_PLATFORM_MUTEX_T mx = at_platform_mutex_create();
+    at_platform_mutex_lock(mx);
+    at_platform_mutex_unlock(mx);
+    at_platform_mutex_destroy(mx);
+
+    at_platform_notify_rx(); /* no-op */
+
+    TEST_PASS(); /* reaching here = no crash */
+}
+
 /* =========================================================================
  * Test runner
  * ========================================================================= */
@@ -745,6 +765,9 @@ int main(void)
     RUN_TEST(test_deinit_aborts_queued_commands);
     RUN_TEST(test_deinit_clears_trace_hook);
     RUN_TEST(test_deinit_then_reinit_works);
+
+    /* Platform defaults smoke test */
+    RUN_TEST(test_platform_defaults_do_not_crash);
 
     return UNITY_END();
 }
