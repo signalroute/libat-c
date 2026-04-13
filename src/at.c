@@ -152,6 +152,10 @@ typedef struct {
 /* Single static engine instance — the only allocation in this library. */
 static at_engine_t g_at;
 
+/* Trace hook — called for every byte written to / read from the modem. */
+static at_trace_cb_t g_trace_cb   = NULL;
+static void         *g_trace_user = NULL;
+
 /* =========================================================================
  * Forward declarations
  * ========================================================================= */
@@ -201,6 +205,21 @@ void at_reset(void)
     g_at.line_len = 0U;
     g_at.echo_armed = false;
     memset(&g_at.pool, 0, sizeof(g_at.pool));
+}
+
+void at_set_trace_hook(at_trace_cb_t cb, void *user)
+{
+    g_trace_cb   = cb;
+    g_trace_user = user;
+}
+
+void at_deinit(void)
+{
+    at_reset();                    /* aborts all queued cmds w/ ABORTED  */
+    memset(g_at.urc_table, 0, sizeof(g_at.urc_table));
+    g_at.state = AT_STATE_IDLE;
+    g_trace_cb   = NULL;
+    g_trace_user = NULL;
 }
 
 /* =========================================================================
@@ -463,6 +482,10 @@ static void engine_start_next(void)
         engine_finalize(AT_ERR_IO, 0);
         return;
     }
+    if (g_trace_cb) {
+        g_trace_cb('T', (const uint8_t *)e->cmd, cmd_len, g_trace_user);
+        g_trace_cb('T', (const uint8_t *)"\r", 1U, g_trace_user);
+    }
 
     g_at.state = AT_STATE_WAITING;
     AT_CFG_LOG(2, "sent: %s", e->cmd);
@@ -503,6 +526,10 @@ static void engine_dispatch_line(const char *line, uint16_t len)
             {
                 engine_finalize(AT_ERR_IO, 0);
                 return;
+            }
+            if (g_trace_cb) {
+                g_trace_cb('T', (const uint8_t *)e->body, body_len, g_trace_user);
+                g_trace_cb('T', (const uint8_t *)"\x1A", 1U, g_trace_user);
             }
             g_at.state = AT_STATE_WAITING;
         }
