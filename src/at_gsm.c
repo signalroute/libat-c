@@ -544,7 +544,7 @@ static uint8_t gsm7_char_to_septet(char c)
         /* 0x40 */ 0x00,0x41,0x42,0x43,0x44,0x45,0x46,0x47, /* @ABCDEFG */
         /* 0x48 */ 0x48,0x49,0x4A,0x4B,0x4C,0x4D,0x4E,0x4F, /* HIJKLMNO */
         /* 0x50 */ 0x50,0x51,0x52,0x53,0x54,0x55,0x56,0x57, /* PQRSTUVW */
-        /* 0x58 */ 0x58,0x59,0x5A,0x3C,0xFF,0x3E,0xFF,0x11, /* XYZ<\>^_ */
+        /* 0x58 */ 0x58,0x59,0x5A,0xFF,0xFF,0xFF,0xFF,0x11, /* XYZ[\]^_ */
         /* 0x60 */ 0xFF,0x61,0x62,0x63,0x64,0x65,0x66,0x67, /* `abcdefg */
         /* 0x68 */ 0x68,0x69,0x6A,0x6B,0x6C,0x6D,0x6E,0x6F, /* hijklmno */
         /* 0x70 */ 0x70,0x71,0x72,0x73,0x74,0x75,0x76,0x77, /* pqrstuvw */
@@ -592,9 +592,70 @@ at_gsm7_result_t at_gsm7_encode(const char *text,
     return AT_GSM7_OK;
 }
 
-/* =========================================================================
- * PDU mode CMGS
- * ========================================================================= */
+/* Reverse LUT: GSM-7 septet (0x00-0x7F) → best-fit ASCII character.
+ * Septets that have no ASCII equivalent are mapped to '?'. */
+static char gsm7_septet_to_ascii(uint8_t septet)
+{
+    /* GSM-7 basic character set (3GPP TS 23.038 Table 1) → ASCII */
+    static const char rev[128] = {
+        '@', '\0','$', '\0','\0','\0','\0','\0', /* 0x00-0x07 */
+        '\0','\0','\n','\0','\0','\r','\0','\0', /* 0x08-0x0F */
+        '\0','_', '\0','\0','\0','\0','\0','\0', /* 0x10-0x17 */
+        '\0','\0','\0','\0','\0','\0','\0','\0', /* 0x18-0x1F */
+        ' ', '!', '"', '#', '\0','%', '&', '\'', /* 0x20-0x27 */
+        '(', ')', '*', '+', ',', '-', '.', '/',  /* 0x28-0x2F */
+        '0', '1', '2', '3', '4', '5', '6', '7', /* 0x30-0x37 */
+        '8', '9', ':', ';', '<', '=', '>', '?',  /* 0x38-0x3F */
+        '\0','A', 'B', 'C', 'D', 'E', 'F', 'G', /* 0x40-0x47 */
+        'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', /* 0x48-0x4F */
+        'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', /* 0x50-0x57 */
+        'X', 'Y', 'Z', '\0','\0','\0','\0','\0', /* 0x58-0x5F */
+        '\0','a', 'b', 'c', 'd', 'e', 'f', 'g', /* 0x60-0x67 */
+        'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', /* 0x68-0x6F */
+        'p', 'q', 'r', 's', 't', 'u', 'v', 'w', /* 0x70-0x77 */
+        'x', 'y', 'z', '\0','\0','\0','\0','\0', /* 0x78-0x7F */
+    };
+    if (septet >= 128U) return '?';
+    char c = rev[septet];
+    return (c == '\0') ? '?' : c;
+}
+
+at_gsm7_result_t at_gsm7_decode(const uint8_t *packed,
+                                  size_t         packed_len,
+                                  size_t         n_chars,
+                                  char          *out,
+                                  size_t         out_sz)
+{
+    if (!packed || !out) return AT_GSM7_ERR_NULL;
+    if (out_sz < n_chars + 1U) return AT_GSM7_ERR_BUF_FULL;
+
+    for (size_t i = 0U; i < n_chars; i++) {
+        size_t bit_pos  = i * 7U;
+        size_t byte_off = bit_pos / 8U;
+        size_t bit_off  = bit_pos % 8U;
+
+        uint8_t sept = (uint8_t)(packed[byte_off] >> bit_off) & 0x7FU;
+        if (bit_off > 1U && byte_off + 1U < packed_len) {
+            sept |= (uint8_t)(packed[byte_off + 1U] << (8U - bit_off)) & 0x7FU;
+        }
+        sept &= 0x7FU;
+        out[i] = gsm7_septet_to_ascii(sept);
+    }
+    out[n_chars] = '\0';
+    return AT_GSM7_OK;
+}
+
+bool at_gsm7_is_valid(const char *text)
+{
+    if (!text) return false;
+    while (*text) {
+        if (gsm7_char_to_septet(*text) == 0xFFU) return false;
+        text++;
+    }
+    return true;
+}
+
+
 
 /* Encode a phone number (E.164) as GSM semi-octet BCD.
  * Writes type-of-address byte + BCD digits into buf, returns bytes written.

@@ -289,12 +289,43 @@ typedef enum {
  * @return AT_GSM7_OK on success, error code otherwise.
  *
  * Maximum output: ceil(160 * 7 / 8) = 140 bytes → out_sz >= 140 suffices.
+ *
+ * Note: '[', ']', '{', '}', '\', '|', '~', '^' are NOT in the GSM-7 basic
+ * character set (3GPP TS 23.038 Table 1). They exist only in the extension
+ * table (prefixed by 0x1B) and will cause AT_GSM7_ERR_CHAR from this function.
  */
 at_gsm7_result_t at_gsm7_encode(const char *text,
                                   uint8_t    *out,
                                   size_t      out_sz,
                                   size_t     *out_len,
                                   size_t     *n_chars);
+
+/**
+ * Decode packed GSM-7 septets back into a NUL-terminated ASCII string.
+ *
+ * Characters that have no ASCII equivalent (e.g. £, ¥, ¡, accented letters)
+ * are replaced with '?' in the output.
+ *
+ * @param packed    Input packed-septet buffer.
+ * @param packed_len  Number of packed bytes (NOT septet count).
+ * @param n_chars   Number of septets expected (= original character count).
+ * @param out       Output buffer for ASCII string (NUL-terminated).
+ * @param out_sz    Size of @p out in bytes (must be >= n_chars + 1).
+ * @return AT_GSM7_OK on success, AT_GSM7_ERR_NULL or AT_GSM7_ERR_BUF_FULL otherwise.
+ */
+at_gsm7_result_t at_gsm7_decode(const uint8_t *packed,
+                                  size_t         packed_len,
+                                  size_t         n_chars,
+                                  char          *out,
+                                  size_t         out_sz);
+
+/**
+ * Check whether all characters in @p text are in the GSM-7 basic character set.
+ *
+ * @param text  NUL-terminated input string.
+ * @return true if every character maps to the GSM-7 basic alphabet; false otherwise.
+ */
+bool at_gsm7_is_valid(const char *text);
 
 /**
  * Send SMS in PDU mode (AT+CMGF=0 must be active).
