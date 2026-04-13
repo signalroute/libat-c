@@ -305,6 +305,39 @@ at_result_t at_gsm_cmgf(uint8_t mode, at_cb_t cb, void *user);
 at_result_t at_gsm_cmgs(const char *number, const char *text,
                          at_cb_t cb, void *user);
 
+/** Select SMS memory storage (AT+CPMS).
+ *
+ * @param mem1  Memory for read/delete ops (e.g. "SM", "ME", "MT").
+ * @param mem2  Memory for write/send ops (may be NULL to keep current).
+ * @param mem3  Memory for received messages (may be NULL to keep current).
+ */
+at_result_t at_gsm_cpms(const char *mem1, const char *mem2, const char *mem3,
+                         at_cb_t cb, void *user);
+
+/**
+ * List SMS messages (AT+CMGL).
+ *
+ * @param stat  0=REC UNREAD, 1=REC READ, 2=STO UNSENT, 3=STO SENT, 4=ALL
+ *              In PDU mode these are the numeric stat values.
+ */
+at_result_t at_gsm_cmgl(uint8_t stat, at_cb_t cb, void *user);
+
+/**
+ * Read a single SMS by index (AT+CMGR).
+ *
+ * @param index  Message index (1-based per 3GPP TS 27.005 §3.5.5).
+ */
+at_result_t at_gsm_cmgr(uint8_t index, at_cb_t cb, void *user);
+
+/**
+ * Delete SMS message(s) (AT+CMGD).
+ *
+ * @param index  Message index to delete (1-based).
+ * @param delflag  0=delete index, 1=delete all read, 2=delete all read+sent,
+ *                 3=delete all read+sent+unsent, 4=delete all.
+ */
+at_result_t at_gsm_cmgd(uint8_t index, uint8_t delflag, at_cb_t cb, void *user);
+
 /* =========================================================================
  * PDU mode SMS
  * ========================================================================= */
@@ -387,15 +420,6 @@ at_result_t at_gsm_cmgs_pdu(const char *smsc,
                               const char *text,
                               at_cb_t     cb,
                               void       *user);
-
-/** Read SMS by index (AT+CMGR). */
-at_result_t at_gsm_cmgr(uint8_t index, at_cb_t cb, void *user);
-
-/** Delete SMS by index (AT+CMGD). stat=0 delete by index, 1-4 all matching status. */
-at_result_t at_gsm_cmgd(uint8_t index, uint8_t delflag, at_cb_t cb, void *user);
-
-/** List SMS (AT+CMGL). stat: "ALL","REC UNREAD","REC READ","STO UNSENT","STO SENT". */
-at_result_t at_gsm_cmgl(const char *stat, at_cb_t cb, void *user);
 
 /** Configure new message indications (AT+CNMI). */
 at_result_t at_gsm_cnmi(uint8_t mode, uint8_t mt, uint8_t bm,
