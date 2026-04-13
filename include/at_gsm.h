@@ -483,6 +483,75 @@ at_result_t at_gsm_hangup(at_cb_t cb, void *user);
 /** List current calls (AT+CLCC). */
 at_result_t at_gsm_clcc(at_cb_t cb, void *user);
 
+/**
+ * Send DTMF tone(s) during a call (AT+VTS).
+ *
+ * @param tones  String of DTMF digits (0-9, *, #, A-D).
+ *               Each character is sent as a separate tone.
+ */
+at_result_t at_gsm_vts(const char *tones, at_cb_t cb, void *user);
+
+/**
+ * Call Hold and Multiparty (AT+CHLD).
+ *
+ * @param n  0=release all/held+waiting, 1=release active+accept held,
+ *           2=place active on hold+accept held, 3=multiparty conference,
+ *           4=ECT (explicit call transfer).
+ */
+at_result_t at_gsm_chld(uint8_t n, at_cb_t cb, void *user);
+
+/* =========================================================================
+ * Supplementary services (call-related)
+ * ========================================================================= */
+
+/**
+ * Calling Line Identification Presentation (AT+CLIP).
+ *
+ * @param mode  0=disable URC, 1=enable "+CLIP: ..." URC on incoming calls.
+ */
+at_result_t at_gsm_clip_set(uint8_t mode, at_cb_t cb, void *user);
+at_result_t at_gsm_clip_query(at_cb_t cb, void *user);
+
+/**
+ * Calling Line Identification Restriction (AT+CLIR).
+ *
+ * @param mode  0=CLIR per subscription default, 1=invocation (suppress CLI),
+ *              2=suppression (show CLI).
+ */
+at_result_t at_gsm_clir_set(uint8_t mode, at_cb_t cb, void *user);
+at_result_t at_gsm_clir_query(at_cb_t cb, void *user);
+
+/**
+ * Call Waiting (AT+CCWA).
+ *
+ * @param enable   0=disable, 1=enable.
+ * @param mode     0=disable query, 1=enable URC notification, 2=query status.
+ * @param class_x  Bit field of service class (1=voice, 2=data, 4=fax, …).
+ */
+at_result_t at_gsm_ccwa_set(uint8_t enable, uint8_t mode, uint8_t class_x,
+                              at_cb_t cb, void *user);
+at_result_t at_gsm_ccwa_query(at_cb_t cb, void *user);
+
+/* =========================================================================
+ * SIM file access (AT+CRSM — 3GPP TS 27.007 §8.18)
+ * ========================================================================= */
+
+/**
+ * Restricted SIM access command (AT+CRSM).
+ *
+ * Allows reading/writing SIM Elementary Files via the ISO 7816-4 command set.
+ *
+ * @param command   SIM command code:
+ *                  176=READ BINARY, 178=READ RECORD, 192=GET RESPONSE,
+ *                  214=UPDATE BINARY, 220=UPDATE RECORD, 242=STATUS.
+ * @param fileid    EF identifier (e.g. 0x6F07 for EF_IMSI, 0x6FAD for EF_AD).
+ * @param p1,p2,p3 Command parameters per ISO 7816-4 / ETSI TS 102.221.
+ * @param data      Optional hex-encoded data string (for UPDATE commands), or NULL.
+ */
+at_result_t at_gsm_crsm(uint8_t command, uint16_t fileid,
+                          uint8_t p1, uint8_t p2, uint8_t p3,
+                          const char *data, at_cb_t cb, void *user);
+
 /* =========================================================================
  * USSD
  * ========================================================================= */

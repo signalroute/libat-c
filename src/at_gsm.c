@@ -567,9 +567,113 @@ at_result_t at_gsm_answer(at_cb_t cb, void *user) { return at_send_raw("ATA",   
 at_result_t at_gsm_hangup(at_cb_t cb, void *user) { return at_send_raw("ATH",    0,      cb, user); }
 at_result_t at_gsm_clcc(at_cb_t cb, void *user)   { return at_send_raw("AT+CLCC",0,      cb, user); }
 
+at_result_t at_gsm_vts(const char *tones, at_cb_t cb, void *user)
+{
+    if (!tones || tones[0] == '\0') return AT_ERR_PARAM;
+    /* Validate: only DTMF chars 0-9, *, #, A-D */
+    for (const char *p = tones; *p; p++) {
+        char c = *p;
+        bool valid = (c >= '0' && c <= '9') || c == '*' || c == '#' ||
+                     (c >= 'A' && c <= 'D') || (c >= 'a' && c <= 'd');
+        if (!valid) return AT_ERR_PARAM;
+    }
+    char buf[32]; AB_INIT(buf, sizeof(buf));
+    AB_STR("AT+VTS="); AB_STR(tones);
+    if (!AB_OK()) return AT_ERR_PARAM;
+    return at_send_raw(AB_DONE(), 0, cb, user);
+}
+
+at_result_t at_gsm_chld(uint8_t n, at_cb_t cb, void *user)
+{
+    if (n > 4U) return AT_ERR_PARAM;
+    char buf[12]; AB_INIT(buf, sizeof(buf));
+    AB_STR("AT+CHLD="); AB_U8(n);
+    if (!AB_OK()) return AT_ERR_PARAM;
+    return at_send_raw(AB_DONE(), 0, cb, user);
+}
+
 /* =========================================================================
- * USSD
+ * Supplementary services
  * ========================================================================= */
+
+at_result_t at_gsm_clip_set(uint8_t mode, at_cb_t cb, void *user)
+{
+    if (mode > 1U) return AT_ERR_PARAM;
+    char buf[12]; AB_INIT(buf, sizeof(buf));
+    AB_STR("AT+CLIP="); AB_U8(mode);
+    if (!AB_OK()) return AT_ERR_PARAM;
+    return at_send_raw(AB_DONE(), 0, cb, user);
+}
+
+at_result_t at_gsm_clip_query(at_cb_t cb, void *user)
+{
+    return at_send_raw("AT+CLIP?", 0, cb, user);
+}
+
+at_result_t at_gsm_clir_set(uint8_t mode, at_cb_t cb, void *user)
+{
+    if (mode > 2U) return AT_ERR_PARAM;
+    char buf[12]; AB_INIT(buf, sizeof(buf));
+    AB_STR("AT+CLIR="); AB_U8(mode);
+    if (!AB_OK()) return AT_ERR_PARAM;
+    return at_send_raw(AB_DONE(), 0, cb, user);
+}
+
+at_result_t at_gsm_clir_query(at_cb_t cb, void *user)
+{
+    return at_send_raw("AT+CLIR?", 0, cb, user);
+}
+
+at_result_t at_gsm_ccwa_set(uint8_t enable, uint8_t mode, uint8_t class_x,
+                              at_cb_t cb, void *user)
+{
+    char buf[20]; AB_INIT(buf, sizeof(buf));
+    AB_STR("AT+CCWA="); AB_U8(enable); AB_CHAR(','); AB_U8(mode);
+    AB_CHAR(','); AB_U8(class_x);
+    if (!AB_OK()) return AT_ERR_PARAM;
+    return at_send_raw(AB_DONE(), 0, cb, user);
+}
+
+at_result_t at_gsm_ccwa_query(at_cb_t cb, void *user)
+{
+    return at_send_raw("AT+CCWA?", 0, cb, user);
+}
+
+/* =========================================================================
+ * SIM file access (AT+CRSM)
+ * ========================================================================= */
+
+at_result_t at_gsm_crsm(uint8_t command, uint16_t fileid,
+                          uint8_t p1, uint8_t p2, uint8_t p3,
+                          const char *data, at_cb_t cb, void *user)
+{
+    /* Validate data string if provided */
+    if (data) {
+        for (const char *p = data; *p; p++) {
+            char c = *p;
+            bool hex = (c >= '0' && c <= '9') ||
+                       (c >= 'A' && c <= 'F') ||
+                       (c >= 'a' && c <= 'f');
+            if (!hex) return AT_ERR_PARAM;
+        }
+    }
+    char buf[96]; AB_INIT(buf, sizeof(buf));
+    AB_STR("AT+CRSM=");
+    AB_U8(command);   AB_CHAR(',');
+    /* fileid as decimal (3GPP TS 27.007 §8.18 uses decimal) */
+    {
+        char fid[8];
+        uint16_t v = fileid; int pos = 7; fid[pos] = '\0';
+        do { fid[--pos] = '0' + (char)(v % 10U); v /= 10U; } while (v);
+        AB_STR(&fid[pos]);
+    }
+    AB_CHAR(','); AB_U8(p1);
+    AB_CHAR(','); AB_U8(p2);
+    AB_CHAR(','); AB_U8(p3);
+    if (data && data[0] != '\0') { AB_CHAR(','); AB_QSTR(data); }
+    if (!AB_OK()) return AT_ERR_PARAM;
+    return at_send_raw(AB_DONE(), 0, cb, user);
+}
 
 at_result_t at_gsm_cusd(const char *ussd_str, uint8_t dcs, at_cb_t cb, void *user)
 {

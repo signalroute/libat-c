@@ -646,8 +646,139 @@ void test_dial_accepts_star_hash(void)
 }
 
 /* =========================================================================
- * AT+CUSD / AT+CLAC / AT+CEER tests
+ * AT+VTS, AT+CHLD, AT+CLIP, AT+CLIR, AT+CCWA, AT+CRSM
  * ========================================================================= */
+
+void test_vts_sends_dtmf(void)
+{
+    at_result_t rc = at_gsm_vts("123*#", NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+VTS=123*#"));
+}
+
+void test_vts_null_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_vts(NULL, NULL, NULL));
+}
+
+void test_vts_empty_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_vts("", NULL, NULL));
+}
+
+void test_vts_invalid_char_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_vts("1X2", NULL, NULL));
+}
+
+void test_vts_injection_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_vts("1\nATH", NULL, NULL));
+}
+
+void test_chld_release_all(void)
+{
+    at_result_t rc = at_gsm_chld(0, NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CHLD=0"));
+}
+
+void test_chld_multiparty(void)
+{
+    at_result_t rc = at_gsm_chld(3, NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CHLD=3"));
+}
+
+void test_chld_invalid_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_chld(5, NULL, NULL));
+}
+
+void test_clip_set_enable(void)
+{
+    at_result_t rc = at_gsm_clip_set(1, NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CLIP=1"));
+}
+
+void test_clip_set_invalid_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_clip_set(2, NULL, NULL));
+}
+
+void test_clip_query(void)
+{
+    at_result_t rc = at_gsm_clip_query(NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CLIP?"));
+}
+
+void test_clir_set_suppress(void)
+{
+    at_result_t rc = at_gsm_clir_set(1, NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CLIR=1"));
+}
+
+void test_clir_set_invalid_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_clir_set(3, NULL, NULL));
+}
+
+void test_clir_query(void)
+{
+    at_result_t rc = at_gsm_clir_query(NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CLIR?"));
+}
+
+void test_ccwa_set(void)
+{
+    at_result_t rc = at_gsm_ccwa_set(1, 1, 1, NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CCWA=1,1,1"));
+}
+
+void test_ccwa_query(void)
+{
+    at_result_t rc = at_gsm_ccwa_query(NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CCWA?"));
+}
+
+void test_crsm_read_binary(void)
+{
+    /* READ BINARY (176) of EF_IMSI (28423 = 0x6F07) */
+    at_result_t rc = at_gsm_crsm(176, 0x6F07, 0, 0, 9, NULL, NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CRSM=176,28423,0,0,9"));
+}
+
+void test_crsm_update_binary_with_data(void)
+{
+    at_result_t rc = at_gsm_crsm(214, 0x6F07, 0, 0, 4, "DEADBEEF", NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CRSM=214,28423,0,0,4,\"DEADBEEF\""));
+}
+
+void test_crsm_invalid_data_returns_param(void)
+{
+    /* Non-hex data must be rejected */
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM,
+        at_gsm_crsm(214, 0x6F07, 0, 0, 4, "ZZZZ", NULL, NULL));
+}
 
 void test_cusd_enqueues_command(void)
 {
@@ -1385,6 +1516,27 @@ int main(void)
     RUN_TEST(test_cmgd_delete_all_read);
     RUN_TEST(test_dial_accepts_valid_number);
     RUN_TEST(test_dial_accepts_star_hash);
+
+    /* AT+VTS / AT+CHLD / AT+CLIP / AT+CLIR / AT+CCWA / AT+CRSM */
+    RUN_TEST(test_vts_sends_dtmf);
+    RUN_TEST(test_vts_null_returns_param);
+    RUN_TEST(test_vts_empty_returns_param);
+    RUN_TEST(test_vts_invalid_char_returns_param);
+    RUN_TEST(test_vts_injection_returns_param);
+    RUN_TEST(test_chld_release_all);
+    RUN_TEST(test_chld_multiparty);
+    RUN_TEST(test_chld_invalid_returns_param);
+    RUN_TEST(test_clip_set_enable);
+    RUN_TEST(test_clip_set_invalid_returns_param);
+    RUN_TEST(test_clip_query);
+    RUN_TEST(test_clir_set_suppress);
+    RUN_TEST(test_clir_set_invalid_returns_param);
+    RUN_TEST(test_clir_query);
+    RUN_TEST(test_ccwa_set);
+    RUN_TEST(test_ccwa_query);
+    RUN_TEST(test_crsm_read_binary);
+    RUN_TEST(test_crsm_update_binary_with_data);
+    RUN_TEST(test_crsm_invalid_data_returns_param);
 
     /* AT+CUSD / AT+CLAC / AT+CEER */
     RUN_TEST(test_cusd_enqueues_command);
