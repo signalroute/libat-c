@@ -164,6 +164,48 @@ at_result_t at_gsm_cgmi(at_cb_t cb, void *user);   /**< Manufacturer  */
 at_result_t at_gsm_cgmm(at_cb_t cb, void *user);   /**< Model         */
 at_result_t at_gsm_cgmr(at_cb_t cb, void *user);   /**< Revision      */
 
+/**
+ * Read ICCID (AT+CCID or AT+ICCID — modem-specific; tries +CCID first).
+ * Response contains a 19–20 digit ICCID string.
+ */
+at_result_t at_gsm_ccid(at_cb_t cb, void *user);
+
+/**
+ * Read subscriber phone number(s) (AT+CNUM).
+ * Response lines contain the MSISDN stored on the SIM.
+ */
+at_result_t at_gsm_cnum(at_cb_t cb, void *user);
+
+/* =========================================================================
+ * Character set and phonebook
+ * ========================================================================= */
+
+/**
+ * Set TE character set (AT+CSCS).
+ *
+ * Common values: "GSM" (GSM-7), "UCS2" (UCS-2 BE hex), "IRA" (ASCII),
+ * "8859-1" (Latin-1), "PCCP437" (PC437).
+ *
+ * @param charset  NUL-terminated charset name (e.g. "GSM", "UCS2").
+ */
+at_result_t at_gsm_cscs_set(const char *charset, at_cb_t cb, void *user);
+
+/** Query current TE character set (AT+CSCS?). */
+at_result_t at_gsm_cscs_query(at_cb_t cb, void *user);
+
+/**
+ * Select phonebook memory storage (AT+CPBS).
+ *
+ * Common storage tags: "SM" (SIM), "ME" (modem/device), "ON" (own numbers),
+ * "FD" (fixed-dial), "MC" (missed calls), "RC" (received calls).
+ *
+ * @param storage  2-character storage tag (e.g. "SM", "ME").
+ */
+at_result_t at_gsm_cpbs_set(const char *storage, at_cb_t cb, void *user);
+
+/** Query selected phonebook storage and capacity (AT+CPBS?). */
+at_result_t at_gsm_cpbs_query(at_cb_t cb, void *user);
+
 /* =========================================================================
  * Power
  * ========================================================================= */

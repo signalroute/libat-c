@@ -864,6 +864,155 @@ void test_send_long_multipart_enqueues_two_cmgs(void)
 }
 
 /* =========================================================================
+ * AT+CCID / AT+CNUM — new identification commands
+ * ========================================================================= */
+
+void test_ccid_enqueues_command(void)
+{
+    at_result_t rc = at_gsm_ccid(NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CCID"));
+}
+
+void test_cnum_enqueues_command(void)
+{
+    at_result_t rc = at_gsm_cnum(NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CNUM"));
+}
+
+/* =========================================================================
+ * AT+CSCS — character set selection
+ * ========================================================================= */
+
+void test_cscs_set_gsm(void)
+{
+    at_result_t rc = at_gsm_cscs_set("GSM", NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CSCS=\"GSM\""));
+}
+
+void test_cscs_set_ucs2(void)
+{
+    at_result_t rc = at_gsm_cscs_set("UCS2", NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CSCS=\"UCS2\""));
+}
+
+void test_cscs_set_ira(void)
+{
+    at_result_t rc = at_gsm_cscs_set("IRA", NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CSCS=\"IRA\""));
+}
+
+void test_cscs_set_8859_1(void)
+{
+    at_result_t rc = at_gsm_cscs_set("8859-1", NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CSCS=\"8859-1\""));
+}
+
+void test_cscs_set_null_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_cscs_set(NULL, NULL, NULL));
+}
+
+void test_cscs_set_empty_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_cscs_set("", NULL, NULL));
+}
+
+void test_cscs_set_injection_quote_returns_param(void)
+{
+    /* Quote in charset name would break the AT command */
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_cscs_set("\"HACK", NULL, NULL));
+}
+
+void test_cscs_set_injection_crlf_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_cscs_set("GSM\r\nAT+CLAC", NULL, NULL));
+}
+
+void test_cscs_query_enqueues_command(void)
+{
+    at_result_t rc = at_gsm_cscs_query(NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CSCS?"));
+}
+
+/* =========================================================================
+ * AT+CPBS — phonebook storage selection
+ * ========================================================================= */
+
+void test_cpbs_set_sm(void)
+{
+    at_result_t rc = at_gsm_cpbs_set("SM", NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CPBS=\"SM\""));
+}
+
+void test_cpbs_set_me(void)
+{
+    at_result_t rc = at_gsm_cpbs_set("ME", NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CPBS=\"ME\""));
+}
+
+void test_cpbs_set_on(void)
+{
+    at_result_t rc = at_gsm_cpbs_set("ON", NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CPBS=\"ON\""));
+}
+
+void test_cpbs_set_fd(void)
+{
+    at_result_t rc = at_gsm_cpbs_set("FD", NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CPBS=\"FD\""));
+}
+
+void test_cpbs_set_null_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_cpbs_set(NULL, NULL, NULL));
+}
+
+void test_cpbs_set_empty_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_cpbs_set("", NULL, NULL));
+}
+
+void test_cpbs_set_injection_quote_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_cpbs_set("\"SM", NULL, NULL));
+}
+
+void test_cpbs_set_injection_crlf_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_cpbs_set("SM\r\nAT+CLAC", NULL, NULL));
+}
+
+void test_cpbs_query_enqueues_command(void)
+{
+    at_result_t rc = at_gsm_cpbs_query(NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CPBS?"));
+}
+
+/* =========================================================================
  * Test runner
  * ========================================================================= */
 
@@ -990,6 +1139,32 @@ int main(void)
     RUN_TEST(test_send_long_short_delegates_to_pdu);
     RUN_TEST(test_send_long_null_number_returns_param);
     RUN_TEST(test_send_long_multipart_enqueues_two_cmgs);
+
+    /* AT+CCID / AT+CNUM */
+    RUN_TEST(test_ccid_enqueues_command);
+    RUN_TEST(test_cnum_enqueues_command);
+
+    /* AT+CSCS — character set */
+    RUN_TEST(test_cscs_set_gsm);
+    RUN_TEST(test_cscs_set_ucs2);
+    RUN_TEST(test_cscs_set_ira);
+    RUN_TEST(test_cscs_set_8859_1);
+    RUN_TEST(test_cscs_set_null_returns_param);
+    RUN_TEST(test_cscs_set_empty_returns_param);
+    RUN_TEST(test_cscs_set_injection_quote_returns_param);
+    RUN_TEST(test_cscs_set_injection_crlf_returns_param);
+    RUN_TEST(test_cscs_query_enqueues_command);
+
+    /* AT+CPBS — phonebook storage */
+    RUN_TEST(test_cpbs_set_sm);
+    RUN_TEST(test_cpbs_set_me);
+    RUN_TEST(test_cpbs_set_on);
+    RUN_TEST(test_cpbs_set_fd);
+    RUN_TEST(test_cpbs_set_null_returns_param);
+    RUN_TEST(test_cpbs_set_empty_returns_param);
+    RUN_TEST(test_cpbs_set_injection_quote_returns_param);
+    RUN_TEST(test_cpbs_set_injection_crlf_returns_param);
+    RUN_TEST(test_cpbs_query_enqueues_command);
 
     return UNITY_END();
 }
