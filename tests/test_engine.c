@@ -26,9 +26,11 @@
 
 static char   s_tx_buf[256];
 static size_t s_tx_len;
+static bool   s_write_fail; /* when true, at_platform_write() returns 0 */
 
 size_t at_platform_write(const uint8_t *data, size_t len)
 {
+    if (s_write_fail) return 0U;
     size_t avail = sizeof(s_tx_buf) - s_tx_len - 1U;
     if (len > avail) len = avail;
     memcpy(s_tx_buf + s_tx_len, data, len);
@@ -90,6 +92,7 @@ void setUp(void)
     s_last_line0[0]   = '\0';
     s_tx_buf[0]       = '\0';
     s_tx_len          = 0;
+    s_write_fail      = false;
 }
 
 void tearDown(void) {}
@@ -516,6 +519,56 @@ void test_multiple_intermediate_lines(void)
 }
 
 /* =========================================================================
+ * HAL write failure (AT_ERR_IO)
+ * ========================================================================= */
+
+/* Write fails on the very first at_platform_write() call (command body). */
+void test_write_failure_delivers_io_error(void)
+{
+    s_write_fail = true;
+    at_send_raw("AT+CSQ", 0, generic_cb, NULL);
+    at_process(); /* triggers engine_start_next → write fails */
+
+    TEST_ASSERT_TRUE(s_cb_called);
+    TEST_ASSERT_EQUAL_INT(AT_ERR_IO, s_last_status);
+    TEST_ASSERT_EQUAL_INT(AT_STATE_IDLE, at_state());
+}
+
+/* Engine returns to IDLE after an IO error — next command can be queued. */
+void test_write_failure_engine_returns_to_idle(void)
+{
+    s_write_fail = true;
+    at_send_raw("AT", 0, generic_cb, NULL);
+    at_process();
+
+    TEST_ASSERT_EQUAL_INT(AT_STATE_IDLE, at_state());
+    TEST_ASSERT_EQUAL_UINT8(0, at_queue_depth());
+}
+
+/* Successful write after a previous IO error works normally. */
+void test_write_failure_then_success(void)
+{
+    /* First command — write fails */
+    s_write_fail = true;
+    at_send_raw("AT+CSQ", 0, generic_cb, NULL);
+    at_process();
+    TEST_ASSERT_TRUE(s_cb_called);
+    TEST_ASSERT_EQUAL_INT(AT_ERR_IO, s_last_status);
+
+    /* Reset test state; re-enable write */
+    s_cb_called   = false;
+    s_last_status = AT_PENDING;
+    s_write_fail  = false;
+
+    at_send_raw("AT", 0, generic_cb, NULL);
+    at_process();
+    feed_ok();
+
+    TEST_ASSERT_TRUE(s_cb_called);
+    TEST_ASSERT_EQUAL_INT(AT_OK, s_last_status);
+}
+
+/* =========================================================================
  * Test runner
  * ========================================================================= */
 
@@ -580,6 +633,11 @@ int main(void)
     RUN_TEST(test_feed_empty_data_does_not_crash);
     RUN_TEST(test_feed_lf_only_line_ending);
     RUN_TEST(test_multiple_intermediate_lines);
+
+    /* HAL write failure */
+    RUN_TEST(test_write_failure_delivers_io_error);
+    RUN_TEST(test_write_failure_engine_returns_to_idle);
+    RUN_TEST(test_write_failure_then_success);
 
     return UNITY_END();
 }
