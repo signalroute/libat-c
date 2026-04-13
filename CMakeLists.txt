@@ -18,6 +18,7 @@ option(LIBATC_BUILD_EXAMPLES "Build host simulation example"                  ON
 add_library(atc
     src/at.c
     src/at_gsm.c
+    src/at_platform_defaults.c
 )
 add_library(at::atc ALIAS atc)
 
