@@ -307,6 +307,44 @@ uint8_t at_queue_depth(void);
  */
 const char *at_result_str(at_result_t r);
 
+/**
+ * @brief Trace hook callback — called for every byte written to / read from the modem.
+ *
+ * @param dir   'T' = transmit (engine → modem), 'R' = receive (modem → engine).
+ * @param data  Raw bytes.
+ * @param len   Number of bytes.
+ * @param user  Opaque pointer registered with at_set_trace_hook().
+ */
+typedef void (*at_trace_cb_t)(char dir, const uint8_t *data, size_t len, void *user);
+
+/**
+ * @brief Register a trace hook to observe all modem traffic.
+ *
+ * Useful for logging, protocol analysers, or test spies.  Pass NULL to
+ * disable tracing.  Only one hook can be active at a time.
+ *
+ * The hook is called from the same context as at_process() (task context,
+ * NOT ISR-safe).  Keep the callback short — do not call any at_*() functions
+ * from inside the trace callback.
+ *
+ * @param cb    Trace callback (or NULL to disable).
+ * @param user  Opaque pointer passed to every invocation.
+ */
+void at_set_trace_hook(at_trace_cb_t cb, void *user);
+
+/**
+ * @brief De-initialise the AT engine and release logical resources.
+ *
+ * Aborts any queued commands (callbacks receive AT_ERR_ABORTED), clears the
+ * URC table, and removes the trace hook.  After this call the engine is in
+ * the same state as before at_init() was called; call at_init() again to
+ * reuse the engine (e.g. after a full modem power cycle).
+ *
+ * This function does NOT call any platform HAL — it will not close a UART
+ * or release a mutex.  Platform teardown is the caller's responsibility.
+ */
+void at_deinit(void);
+
 #ifdef __cplusplus
 }
 #endif

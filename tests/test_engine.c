@@ -569,6 +569,104 @@ void test_write_failure_then_success(void)
 }
 
 /* =========================================================================
+ * at_set_trace_hook tests
+ * ========================================================================= */
+
+static char   s_trace_dir[32];
+static size_t s_trace_calls;
+
+static void test_trace_cb(char dir, const uint8_t *data, size_t len, void *user)
+{
+    (void)user;
+    if (s_trace_calls < sizeof(s_trace_dir) - 1U) {
+        s_trace_dir[s_trace_calls] = dir;
+    }
+    (void)data; (void)len;
+    s_trace_calls++;
+}
+
+void test_trace_hook_called_on_transmit(void)
+{
+    s_trace_calls = 0;
+    memset(s_trace_dir, 0, sizeof(s_trace_dir));
+    at_set_trace_hook(test_trace_cb, NULL);
+
+    at_send_raw("AT", 0, generic_cb, NULL);
+    at_process();
+
+    /* Two trace calls: one for "AT", one for "\r" */
+    TEST_ASSERT_EQUAL_size_t(2, s_trace_calls);
+    TEST_ASSERT_EQUAL_CHAR('T', s_trace_dir[0]);
+    TEST_ASSERT_EQUAL_CHAR('T', s_trace_dir[1]);
+
+    at_set_trace_hook(NULL, NULL); /* cleanup */
+}
+
+void test_trace_hook_null_disables(void)
+{
+    s_trace_calls = 0;
+    at_set_trace_hook(NULL, NULL);
+
+    at_send_raw("AT", 0, generic_cb, NULL);
+    at_process();
+    feed_ok();
+
+    TEST_ASSERT_EQUAL_size_t(0, s_trace_calls);
+}
+
+/* =========================================================================
+ * at_deinit tests
+ * ========================================================================= */
+
+void test_deinit_aborts_queued_commands(void)
+{
+    /* Queue two commands without processing */
+    at_send_raw("AT+CSQ", 0, generic_cb, NULL);
+    at_send_raw("AT+CREG?", 0, generic_cb, NULL);
+
+    s_cb_called   = false;
+    s_last_status = AT_PENDING;
+
+    at_deinit();
+
+    /* at_deinit drains via at_reset → callbacks fire with ABORTED */
+    TEST_ASSERT_EQUAL_INT(AT_STATE_IDLE, at_state());
+    TEST_ASSERT_EQUAL_INT(0, at_queue_depth());
+}
+
+void test_deinit_clears_trace_hook(void)
+{
+    s_trace_calls = 0;
+    at_set_trace_hook(test_trace_cb, NULL);
+    at_deinit();
+
+    /* After deinit, re-init and send — trace must not fire */
+    at_init();
+    s_trace_calls = 0;
+    at_send_raw("AT", 0, generic_cb, NULL);
+    at_process();
+    feed_ok();
+
+    TEST_ASSERT_EQUAL_size_t(0, s_trace_calls);
+}
+
+void test_deinit_then_reinit_works(void)
+{
+    at_deinit();
+    at_init();
+
+    s_cb_called   = false;
+    s_last_status = AT_PENDING;
+
+    at_send_raw("AT", 0, generic_cb, NULL);
+    at_process();
+    feed_ok();
+
+    TEST_ASSERT_TRUE(s_cb_called);
+    TEST_ASSERT_EQUAL_INT(AT_OK, s_last_status);
+}
+
+/* =========================================================================
  * Test runner
  * ========================================================================= */
 
@@ -638,6 +736,15 @@ int main(void)
     RUN_TEST(test_write_failure_delivers_io_error);
     RUN_TEST(test_write_failure_engine_returns_to_idle);
     RUN_TEST(test_write_failure_then_success);
+
+    /* at_set_trace_hook */
+    RUN_TEST(test_trace_hook_called_on_transmit);
+    RUN_TEST(test_trace_hook_null_disables);
+
+    /* at_deinit */
+    RUN_TEST(test_deinit_aborts_queued_commands);
+    RUN_TEST(test_deinit_clears_trace_hook);
+    RUN_TEST(test_deinit_then_reinit_works);
 
     return UNITY_END();
 }
