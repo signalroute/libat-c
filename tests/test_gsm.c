@@ -621,6 +621,146 @@ void test_gsm7_encode_at_sign(void)
 }
 
 /* =========================================================================
+ * GSM-7 LUT correctness tests (issue #252)
+ * ========================================================================= */
+
+void test_gsm7_bracket_not_in_basic_set(void)
+{
+    /* '[' and ']' are extension-table only — basic encoder must reject them */
+    uint8_t out[4]; size_t ol = 0, nc = 0;
+    TEST_ASSERT_EQUAL_INT(AT_GSM7_ERR_CHAR,
+        at_gsm7_encode("[", out, sizeof(out), &ol, &nc));
+    TEST_ASSERT_EQUAL_INT(AT_GSM7_ERR_CHAR,
+        at_gsm7_encode("]", out, sizeof(out), &ol, &nc));
+}
+
+void test_gsm7_backslash_not_in_basic_set(void)
+{
+    uint8_t out[4]; size_t ol = 0, nc = 0;
+    TEST_ASSERT_EQUAL_INT(AT_GSM7_ERR_CHAR,
+        at_gsm7_encode("\\", out, sizeof(out), &ol, &nc));
+}
+
+void test_gsm7_caret_not_in_basic_set(void)
+{
+    uint8_t out[4]; size_t ol = 0, nc = 0;
+    TEST_ASSERT_EQUAL_INT(AT_GSM7_ERR_CHAR,
+        at_gsm7_encode("^", out, sizeof(out), &ol, &nc));
+}
+
+void test_gsm7_less_than_is_valid(void)
+{
+    /* '<' IS in the GSM-7 basic set at septet 0x3C */
+    uint8_t out[4]; size_t ol = 0, nc = 0;
+    TEST_ASSERT_EQUAL_INT(AT_GSM7_OK,
+        at_gsm7_encode("<", out, sizeof(out), &ol, &nc));
+    TEST_ASSERT_EQUAL_HEX8(0x3CU, out[0]);
+}
+
+void test_gsm7_greater_than_is_valid(void)
+{
+    /* '>' IS in the GSM-7 basic set at septet 0x3E */
+    uint8_t out[4]; size_t ol = 0, nc = 0;
+    TEST_ASSERT_EQUAL_INT(AT_GSM7_OK,
+        at_gsm7_encode(">", out, sizeof(out), &ol, &nc));
+    TEST_ASSERT_EQUAL_HEX8(0x3EU, out[0]);
+}
+
+/* =========================================================================
+ * at_gsm7_is_valid tests
+ * ========================================================================= */
+
+void test_gsm7_is_valid_ascii_message(void)
+{
+    TEST_ASSERT_TRUE(at_gsm7_is_valid("Hello World!"));
+}
+
+void test_gsm7_is_valid_null_returns_false(void)
+{
+    TEST_ASSERT_FALSE(at_gsm7_is_valid(NULL));
+}
+
+void test_gsm7_is_valid_empty_string(void)
+{
+    TEST_ASSERT_TRUE(at_gsm7_is_valid(""));
+}
+
+void test_gsm7_is_valid_bracket_returns_false(void)
+{
+    TEST_ASSERT_FALSE(at_gsm7_is_valid("say [hi]"));
+}
+
+void test_gsm7_is_valid_at_sign(void)
+{
+    TEST_ASSERT_TRUE(at_gsm7_is_valid("@user"));
+}
+
+void test_gsm7_is_valid_unicode_returns_false(void)
+{
+    /* 0xC3 = first byte of a UTF-8 multibyte sequence — not GSM-7 */
+    TEST_ASSERT_FALSE(at_gsm7_is_valid("\xC3\xA9")); /* é in UTF-8 */
+}
+
+/* =========================================================================
+ * at_gsm7_decode tests
+ * ========================================================================= */
+
+void test_gsm7_decode_hello(void)
+{
+    /* Packed GSM-7 for "Hello" = C8 32 9B FD 06 */
+    static const uint8_t packed[] = {0xC8, 0x32, 0x9B, 0xFD, 0x06};
+    char out[8] = {0};
+    at_gsm7_result_t rc = at_gsm7_decode(packed, sizeof(packed), 5, out, sizeof(out));
+    TEST_ASSERT_EQUAL_INT(AT_GSM7_OK, rc);
+    TEST_ASSERT_EQUAL_STRING("Hello", out);
+}
+
+void test_gsm7_decode_null_input(void)
+{
+    char out[8];
+    TEST_ASSERT_EQUAL_INT(AT_GSM7_ERR_NULL,
+        at_gsm7_decode(NULL, 0, 0, out, sizeof(out)));
+}
+
+void test_gsm7_decode_null_output(void)
+{
+    static const uint8_t packed[] = {0x00};
+    TEST_ASSERT_EQUAL_INT(AT_GSM7_ERR_NULL,
+        at_gsm7_decode(packed, sizeof(packed), 1, NULL, 0));
+}
+
+void test_gsm7_decode_buf_too_small(void)
+{
+    static const uint8_t packed[] = {0xC8, 0x32, 0x9B, 0xFD, 0x06};
+    char out[4]; /* only 4 bytes for 5 chars + NUL — too small */
+    TEST_ASSERT_EQUAL_INT(AT_GSM7_ERR_BUF_FULL,
+        at_gsm7_decode(packed, sizeof(packed), 5, out, sizeof(out)));
+}
+
+void test_gsm7_decode_roundtrip(void)
+{
+    /* Encode then decode must recover original string */
+    const char *msg = "Test 123!";
+    uint8_t packed[20]; size_t ol = 0, nc = 0;
+    TEST_ASSERT_EQUAL_INT(AT_GSM7_OK,
+        at_gsm7_encode(msg, packed, sizeof(packed), &ol, &nc));
+    char recovered[32] = {0};
+    TEST_ASSERT_EQUAL_INT(AT_GSM7_OK,
+        at_gsm7_decode(packed, ol, nc, recovered, sizeof(recovered)));
+    TEST_ASSERT_EQUAL_STRING(msg, recovered);
+}
+
+void test_gsm7_decode_space(void)
+{
+    /* Single space: GSM-7 septet 0x20, packed as 0x20 */
+    static const uint8_t packed[] = {0x20};
+    char out[4] = {0};
+    TEST_ASSERT_EQUAL_INT(AT_GSM7_OK,
+        at_gsm7_decode(packed, sizeof(packed), 1, out, sizeof(out)));
+    TEST_ASSERT_EQUAL_STRING(" ", out);
+}
+
+/* =========================================================================
  * PDU CMGS tests
  * ========================================================================= */
 
@@ -736,6 +876,29 @@ int main(void)
     RUN_TEST(test_pdu_cmgs_null_number);
     RUN_TEST(test_pdu_cmgs_null_text);
     RUN_TEST(test_pdu_cmgs_enqueues_command);
+
+    /* GSM-7 LUT correctness (issue #252) */
+    RUN_TEST(test_gsm7_bracket_not_in_basic_set);
+    RUN_TEST(test_gsm7_backslash_not_in_basic_set);
+    RUN_TEST(test_gsm7_caret_not_in_basic_set);
+    RUN_TEST(test_gsm7_less_than_is_valid);
+    RUN_TEST(test_gsm7_greater_than_is_valid);
+
+    /* at_gsm7_is_valid */
+    RUN_TEST(test_gsm7_is_valid_ascii_message);
+    RUN_TEST(test_gsm7_is_valid_null_returns_false);
+    RUN_TEST(test_gsm7_is_valid_empty_string);
+    RUN_TEST(test_gsm7_is_valid_bracket_returns_false);
+    RUN_TEST(test_gsm7_is_valid_at_sign);
+    RUN_TEST(test_gsm7_is_valid_unicode_returns_false);
+
+    /* at_gsm7_decode */
+    RUN_TEST(test_gsm7_decode_hello);
+    RUN_TEST(test_gsm7_decode_null_input);
+    RUN_TEST(test_gsm7_decode_null_output);
+    RUN_TEST(test_gsm7_decode_buf_too_small);
+    RUN_TEST(test_gsm7_decode_roundtrip);
+    RUN_TEST(test_gsm7_decode_space);
 
     return UNITY_END();
 }
