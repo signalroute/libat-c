@@ -247,6 +247,50 @@ at_result_t at_gsm_cgmi(at_cb_t cb, void *user) { return at_send_raw("AT+CGMI", 
 at_result_t at_gsm_cgmm(at_cb_t cb, void *user) { return at_send_raw("AT+CGMM", 0, cb, user); }
 at_result_t at_gsm_cgmr(at_cb_t cb, void *user) { return at_send_raw("AT+CGMR", 0, cb, user); }
 
+at_result_t at_gsm_ccid(at_cb_t cb, void *user) { return at_send_raw("AT+CCID", 0, cb, user); }
+at_result_t at_gsm_cnum(at_cb_t cb, void *user) { return at_send_raw("AT+CNUM", 0, cb, user); }
+
+/* =========================================================================
+ * Character set and phonebook (AT+CSCS, AT+CPBS)
+ * ========================================================================= */
+
+at_result_t at_gsm_cscs_set(const char *charset, at_cb_t cb, void *user)
+{
+    if (!charset || charset[0] == '\0') return AT_ERR_PARAM;
+    /* Validate: only printable ASCII, no quotes or injection chars */
+    for (const char *p = charset; *p; p++) {
+        if ((unsigned char)*p < 0x20 || *p == '"' || *p == '\r' || *p == '\n')
+            return AT_ERR_PARAM;
+    }
+    char buf[24]; AB_INIT(buf, sizeof(buf));
+    AB_STR("AT+CSCS=\""); AB_STR(charset); AB_CHAR('"');
+    if (!AB_OK()) return AT_ERR_PARAM;
+    return at_send_raw(AB_DONE(), 0, cb, user);
+}
+
+at_result_t at_gsm_cscs_query(at_cb_t cb, void *user)
+{
+    return at_send_raw("AT+CSCS?", 0, cb, user);
+}
+
+at_result_t at_gsm_cpbs_set(const char *storage, at_cb_t cb, void *user)
+{
+    if (!storage || storage[0] == '\0') return AT_ERR_PARAM;
+    for (const char *p = storage; *p; p++) {
+        if ((unsigned char)*p < 0x20 || *p == '"' || *p == '\r' || *p == '\n')
+            return AT_ERR_PARAM;
+    }
+    char buf[20]; AB_INIT(buf, sizeof(buf));
+    AB_STR("AT+CPBS=\""); AB_STR(storage); AB_CHAR('"');
+    if (!AB_OK()) return AT_ERR_PARAM;
+    return at_send_raw(AB_DONE(), 0, cb, user);
+}
+
+at_result_t at_gsm_cpbs_query(at_cb_t cb, void *user)
+{
+    return at_send_raw("AT+CPBS?", 0, cb, user);
+}
+
 /* =========================================================================
  * Power
  * ========================================================================= */
