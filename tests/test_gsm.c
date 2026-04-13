@@ -1417,6 +1417,178 @@ void test_cpbs_query_enqueues_command(void)
 }
 
 /* =========================================================================
+ * AT+CGSN — IMEI read
+ * ========================================================================= */
+
+void test_cgsn_enqueues_cgsn(void)
+{
+    at_result_t rc = at_gsm_cgsn(NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    drain_and_complete();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CGSN"));
+}
+
+void test_cgsn_exact_cmd(void)
+{
+    at_gsm_cgsn(NULL, NULL);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CGSN"));
+}
+
+void test_cgsn_matches_imei_alias(void)
+{
+    /* Both at_gsm_cgsn and at_gsm_imei must produce the same command. */
+    at_gsm_cgsn(NULL, NULL);
+    drain_and_complete();
+    char cgsn_tx[sizeof(s_tx_buf)];
+    memcpy(cgsn_tx, s_tx_buf, s_tx_len + 1U);
+
+    setUp();
+    at_gsm_imei(NULL, NULL);
+    drain_and_complete();
+
+    TEST_ASSERT_EQUAL_STRING(cgsn_tx, s_tx_buf);
+}
+
+/* =========================================================================
+ * AT+CPOL — preferred operator list
+ * ========================================================================= */
+
+void test_cpol_read_enqueues_query(void)
+{
+    at_result_t rc = at_gsm_cpol_read(NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CPOL?"));
+}
+
+void test_cpol_write_numeric_format(void)
+{
+    at_result_t rc = at_gsm_cpol_write(1, 2, "26201", NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    drain_and_complete();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CPOL="));
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "26201"));
+}
+
+void test_cpol_write_long_alpha_format(void)
+{
+    at_result_t rc = at_gsm_cpol_write(2, 0, "Telekom.de", NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    drain_and_complete();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "Telekom.de"));
+}
+
+void test_cpol_write_fmt1(void)
+{
+    at_result_t rc = at_gsm_cpol_write(3, 1, "TDE", NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    drain_and_complete();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CPOL=3,1,"));
+}
+
+void test_cpol_write_null_oper_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_cpol_write(1, 0, NULL, NULL, NULL));
+}
+
+void test_cpol_write_empty_oper_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_cpol_write(1, 0, "", NULL, NULL));
+}
+
+void test_cpol_write_invalid_fmt_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_cpol_write(1, 3, "26201", NULL, NULL));
+}
+
+void test_cpol_write_injection_quote_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_cpol_write(1, 2, "262\"01", NULL, NULL));
+}
+
+void test_cpol_write_injection_crlf_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_cpol_write(1, 2, "262\r\n01", NULL, NULL));
+}
+
+/* =========================================================================
+ * AT+CTZU — automatic time zone update
+ * ========================================================================= */
+
+void test_ctzu_set_enable(void)
+{
+    at_result_t rc = at_gsm_ctzu_set(1, NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    drain_and_complete();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CTZU=1"));
+}
+
+void test_ctzu_set_disable(void)
+{
+    at_result_t rc = at_gsm_ctzu_set(0, NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    drain_and_complete();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CTZU=0"));
+}
+
+void test_ctzu_set_invalid_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_ctzu_set(2, NULL, NULL));
+}
+
+void test_ctzu_set_invalid_high_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_ctzu_set(255, NULL, NULL));
+}
+
+void test_ctzu_query_enqueues_command(void)
+{
+    at_result_t rc = at_gsm_ctzu_query(NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CTZU?"));
+}
+
+/* =========================================================================
+ * AT+CGATT — GPRS attach / detach
+ * ========================================================================= */
+
+void test_cgatt_attach(void)
+{
+    at_result_t rc = at_gsm_cgatt(1, NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    drain_and_complete();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CGATT=1"));
+}
+
+void test_cgatt_detach(void)
+{
+    at_result_t rc = at_gsm_cgatt(0, NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    drain_and_complete();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CGATT=0"));
+}
+
+void test_cgatt_invalid_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_cgatt(2, NULL, NULL));
+}
+
+void test_cgatt_invalid_high_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_cgatt(255, NULL, NULL));
+}
+
+void test_cgatt_query_enqueues_command(void)
+{
+    at_result_t rc = at_gsm_cgatt_query(NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CGATT?"));
+}
+
+/* =========================================================================
  * Test runner
  * ========================================================================= */
 
@@ -1637,6 +1809,36 @@ int main(void)
     RUN_TEST(test_cpbs_set_injection_quote_returns_param);
     RUN_TEST(test_cpbs_set_injection_crlf_returns_param);
     RUN_TEST(test_cpbs_query_enqueues_command);
+
+    /* AT+CGSN — IMEI read */
+    RUN_TEST(test_cgsn_enqueues_cgsn);
+    RUN_TEST(test_cgsn_exact_cmd);
+    RUN_TEST(test_cgsn_matches_imei_alias);
+
+    /* AT+CPOL — preferred operator list */
+    RUN_TEST(test_cpol_read_enqueues_query);
+    RUN_TEST(test_cpol_write_numeric_format);
+    RUN_TEST(test_cpol_write_long_alpha_format);
+    RUN_TEST(test_cpol_write_fmt1);
+    RUN_TEST(test_cpol_write_null_oper_returns_param);
+    RUN_TEST(test_cpol_write_empty_oper_returns_param);
+    RUN_TEST(test_cpol_write_invalid_fmt_returns_param);
+    RUN_TEST(test_cpol_write_injection_quote_returns_param);
+    RUN_TEST(test_cpol_write_injection_crlf_returns_param);
+
+    /* AT+CTZU — automatic time zone update */
+    RUN_TEST(test_ctzu_set_enable);
+    RUN_TEST(test_ctzu_set_disable);
+    RUN_TEST(test_ctzu_set_invalid_returns_param);
+    RUN_TEST(test_ctzu_set_invalid_high_returns_param);
+    RUN_TEST(test_ctzu_query_enqueues_command);
+
+    /* AT+CGATT — GPRS attach / detach */
+    RUN_TEST(test_cgatt_attach);
+    RUN_TEST(test_cgatt_detach);
+    RUN_TEST(test_cgatt_invalid_returns_param);
+    RUN_TEST(test_cgatt_invalid_high_returns_param);
+    RUN_TEST(test_cgatt_query_enqueues_command);
 
     return UNITY_END();
 }
