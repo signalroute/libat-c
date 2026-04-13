@@ -242,6 +242,7 @@ at_result_t at_gsm_cmee(uint8_t mode, at_cb_t cb, void *user)
  * ========================================================================= */
 
 at_result_t at_gsm_imei(at_cb_t cb, void *user) { return at_send_raw("AT+CGSN", 0, cb, user); }
+at_result_t at_gsm_cgsn(at_cb_t cb, void *user) { return at_send_raw("AT+CGSN", 0, cb, user); }
 at_result_t at_gsm_imsi(at_cb_t cb, void *user) { return at_send_raw("AT+CIMI", 0, cb, user); }
 at_result_t at_gsm_cgmi(at_cb_t cb, void *user) { return at_send_raw("AT+CGMI", 0, cb, user); }
 at_result_t at_gsm_cgmm(at_cb_t cb, void *user) { return at_send_raw("AT+CGMM", 0, cb, user); }
@@ -409,6 +410,31 @@ at_result_t at_gsm_cops_manual(const char *oper, uint8_t act, at_cb_t cb, void *
 }
 
 /* =========================================================================
+ * Preferred operator list
+ * ========================================================================= */
+
+at_result_t at_gsm_cpol_read(at_cb_t cb, void *user)
+{
+    return at_send_raw("AT+CPOL?", 0, cb, user);
+}
+
+at_result_t at_gsm_cpol_write(uint8_t idx, uint8_t fmt, const char *oper,
+                               at_cb_t cb, void *user)
+{
+    if (!oper || oper[0] == '\0') return AT_ERR_PARAM;
+    if (fmt > 2U) return AT_ERR_PARAM;
+    for (const char *p = oper; *p; p++) {
+        if ((unsigned char)*p < 0x20 || *p == '"' || *p == '\r' || *p == '\n')
+            return AT_ERR_PARAM;
+    }
+    char buf[48]; AB_INIT(buf, sizeof(buf));
+    AB_STR("AT+CPOL="); AB_U8(idx); AB_CHAR(','); AB_U8(fmt);
+    AB_CHAR(','); AB_QSTR(oper);
+    if (!AB_OK()) return AT_ERR_PARAM;
+    return at_send_raw(AB_DONE(), 0, cb, user);
+}
+
+/* =========================================================================
  * Signal quality
  * ========================================================================= */
 
@@ -428,6 +454,24 @@ at_result_t at_gsm_cclk_set(const char *time_str, at_cb_t cb, void *user)
     AB_STR("AT+CCLK="); AB_QSTR(time_str);
     if (!AB_OK()) return AT_ERR_PARAM;
     return at_send_raw(AB_DONE(), 0, cb, user);
+}
+
+/* =========================================================================
+ * Automatic time zone update
+ * ========================================================================= */
+
+at_result_t at_gsm_ctzu_set(uint8_t enable, at_cb_t cb, void *user)
+{
+    if (enable > 1U) return AT_ERR_PARAM;
+    char buf[12]; AB_INIT(buf, sizeof(buf));
+    AB_STR("AT+CTZU="); AB_U8(enable);
+    if (!AB_OK()) return AT_ERR_PARAM;
+    return at_send_raw(AB_DONE(), 0, cb, user);
+}
+
+at_result_t at_gsm_ctzu_query(at_cb_t cb, void *user)
+{
+    return at_send_raw("AT+CTZU?", 0, cb, user);
 }
 
 /* =========================================================================
@@ -460,6 +504,24 @@ at_result_t at_gsm_cgpaddr(uint8_t cid, at_cb_t cb, void *user)
     AB_STR("AT+CGPADDR="); AB_U8(cid);
     if (!AB_OK()) return AT_ERR_PARAM;
     return at_send_raw(AB_DONE(), 0, cb, user);
+}
+
+/* =========================================================================
+ * GPRS attach / detach
+ * ========================================================================= */
+
+at_result_t at_gsm_cgatt(uint8_t attach, at_cb_t cb, void *user)
+{
+    if (attach > 1U) return AT_ERR_PARAM;
+    char buf[14]; AB_INIT(buf, sizeof(buf));
+    AB_STR("AT+CGATT="); AB_U8(attach);
+    if (!AB_OK()) return AT_ERR_PARAM;
+    return at_send_raw(AB_DONE(), 75000U, cb, user);
+}
+
+at_result_t at_gsm_cgatt_query(at_cb_t cb, void *user)
+{
+    return at_send_raw("AT+CGATT?", 0, cb, user);
 }
 
 /* =========================================================================

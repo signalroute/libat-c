@@ -158,7 +158,8 @@ at_result_t at_gsm_gcap(at_cb_t cb, void *user);
  * Identification
  * ========================================================================= */
 
-at_result_t at_gsm_imei(at_cb_t cb, void *user);   /**< AT+CGSN  */
+at_result_t at_gsm_imei(at_cb_t cb, void *user);   /**< AT+CGSN (alias: at_gsm_cgsn) */
+at_result_t at_gsm_cgsn(at_cb_t cb, void *user);   /**< AT+CGSN — IMEI read          */
 at_result_t at_gsm_imsi(at_cb_t cb, void *user);   /**< AT+CIMI  */
 at_result_t at_gsm_cgmi(at_cb_t cb, void *user);   /**< Manufacturer  */
 at_result_t at_gsm_cgmm(at_cb_t cb, void *user);   /**< Model         */
@@ -261,6 +262,16 @@ at_result_t at_gsm_cops_auto(at_cb_t cb, void *user);
 at_result_t at_gsm_cops_manual(const char *oper, uint8_t act,
                                 at_cb_t cb, void *user);
 
+/**
+ * AT+CPOL — preferred operator list.
+ * cpol_read: AT+CPOL?
+ * cpol_write: AT+CPOL=<idx>,<fmt>,"<oper>"
+ *   idx  1–100, fmt 0=numeric/long/short, oper: operator string (injection-safe)
+ */
+at_result_t at_gsm_cpol_read(at_cb_t cb, void *user);
+at_result_t at_gsm_cpol_write(uint8_t idx, uint8_t fmt, const char *oper,
+                               at_cb_t cb, void *user);
+
 /* =========================================================================
  * Signal quality
  * ========================================================================= */
@@ -278,6 +289,14 @@ at_result_t at_gsm_cclk_query(at_cb_t cb, void *user);
 /** Set clock — time_str format: "yy/MM/dd,hh:mm:ss±zz". */
 at_result_t at_gsm_cclk_set(const char *time_str, at_cb_t cb, void *user);
 
+/**
+ * AT+CTZU — automatic time zone update.
+ * ctzu_set:   AT+CTZU=0|1 (0=disable, 1=enable)
+ * ctzu_query: AT+CTZU?
+ */
+at_result_t at_gsm_ctzu_set(uint8_t enable, at_cb_t cb, void *user);
+at_result_t at_gsm_ctzu_query(at_cb_t cb, void *user);
+
 /* =========================================================================
  * Packet data (GPRS/LTE)
  * ========================================================================= */
@@ -290,6 +309,14 @@ at_result_t at_gsm_cgact(uint8_t cid, bool activate, at_cb_t cb, void *user);
 
 /** Query PDP address (AT+CGPADDR). */
 at_result_t at_gsm_cgpaddr(uint8_t cid, at_cb_t cb, void *user);
+
+/**
+ * AT+CGATT — GPRS attach / detach.
+ * cgatt:       AT+CGATT=0|1 (0=detach, 1=attach); invalid value → AT_ERR_PARAM
+ * cgatt_query: AT+CGATT?
+ */
+at_result_t at_gsm_cgatt(uint8_t attach, at_cb_t cb, void *user);
+at_result_t at_gsm_cgatt_query(at_cb_t cb, void *user);
 
 /* =========================================================================
  * SMS
