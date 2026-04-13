@@ -580,6 +580,79 @@ at_result_t at_gsm_cusd(const char *ussd_str, uint8_t dcs, at_cb_t cb, void *use
     return at_send_raw(AB_DONE(), 30000U, cb, user);
 }
 
+at_result_t at_gsm_cusd_cancel(at_cb_t cb, void *user)
+{
+    return at_send_raw("AT+CUSD=2", 0, cb, user);
+}
+
+at_result_t at_gsm_clac(at_cb_t cb, void *user)
+{
+    return at_send_raw("AT+CLAC", 0, cb, user);
+}
+
+at_result_t at_gsm_ceer(at_cb_t cb, void *user)
+{
+    return at_send_raw("AT+CEER", 0, cb, user);
+}
+
+/* =========================================================================
+ * SCTS timestamp parser
+ * =========================================================================
+ *
+ * 3GPP TS 23.040 §9.2.3.11 — format: "yy/MM/dd,hh:mm:ss[+|-]zz"
+ * Each field is a 2-digit decimal; tz_quarter is the raw ±zz value
+ * (units of 15 minutes; range −48 to +48).
+ *
+ * Nibbles in the PDU are swapped (BCD semi-octets), but the ASCII form
+ * returned by AT+CMGR in text mode is already in human-readable order.
+ */
+
+static bool parse_scts_field(const char **p, uint8_t *out)
+{
+    const char *s = *p;
+    if ((uint8_t)(s[0] - '0') > 9U || (uint8_t)(s[1] - '0') > 9U) return false;
+    *out = (uint8_t)((s[0] - '0') * 10 + (s[1] - '0'));
+    *p += 2;
+    return true;
+}
+
+bool at_parse_scts(const char *scts_str, at_scts_t *out)
+{
+    if (!scts_str || !out) return false;
+
+    const char *p = scts_str;
+    if (!parse_scts_field(&p, &out->year))   return false;
+    if (*p++ != '/')                          return false;
+    if (!parse_scts_field(&p, &out->month))  return false;
+    if (out->month < 1U || out->month > 12U) return false;
+    if (*p++ != '/')                          return false;
+    if (!parse_scts_field(&p, &out->day))    return false;
+    if (out->day < 1U || out->day > 31U)     return false;
+    if (*p++ != ',')                          return false;
+    if (!parse_scts_field(&p, &out->hour))   return false;
+    if (out->hour > 23U)                      return false;
+    if (*p++ != ':')                          return false;
+    if (!parse_scts_field(&p, &out->minute)) return false;
+    if (out->minute > 59U)                    return false;
+    if (*p++ != ':')                          return false;
+    if (!parse_scts_field(&p, &out->second)) return false;
+    if (out->second > 59U)                    return false;
+
+    /* Optional timezone: ±zz in quarter-hours */
+    if (*p == '+' || *p == '-') {
+        int8_t sign = (*p == '+') ? 1 : -1;
+        p++;
+        uint8_t raw;
+        if (!parse_scts_field(&p, &raw)) return false;
+        if (raw > 48U) return false;  /* ±12 hours max */
+        out->tz_quarter = sign * (int8_t)raw;
+    } else {
+        out->tz_quarter = 0;
+    }
+
+    return true;
+}
+
 /* =========================================================================
  * GSM-7 encoder
  * =========================================================================

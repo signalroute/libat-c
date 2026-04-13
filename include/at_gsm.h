@@ -491,6 +491,48 @@ at_result_t at_gsm_clcc(at_cb_t cb, void *user);
 at_result_t at_gsm_cusd(const char *ussd_str, uint8_t dcs,
                          at_cb_t cb, void *user);
 
+/** Cancel pending USSD session (AT+CUSD=2). */
+at_result_t at_gsm_cusd_cancel(at_cb_t cb, void *user);
+
+/**
+ * List all supported AT commands (AT+CLAC).
+ * Response is a multi-line list of command names.
+ */
+at_result_t at_gsm_clac(at_cb_t cb, void *user);
+
+/**
+ * Report mobile equipment error cause (AT+CEER).
+ * Returns a vendor-specific string describing the last call-release cause.
+ */
+at_result_t at_gsm_ceer(at_cb_t cb, void *user);
+
+/* =========================================================================
+ * SMS timestamp (SCTS) parser
+ * ========================================================================= */
+
+/** Parsed Service Centre Time Stamp from +CMGR / +CMT responses. */
+typedef struct {
+    uint8_t year;       /**< Year (00–99, offset from 2000)        */
+    uint8_t month;      /**< Month (1–12)                          */
+    uint8_t day;        /**< Day   (1–31)                          */
+    uint8_t hour;       /**< Hour  (0–23)                          */
+    uint8_t minute;     /**< Minute (0–59)                         */
+    uint8_t second;     /**< Second (0–59)                         */
+    int8_t  tz_quarter; /**< Timezone offset in quarter-hours (-48..+48) */
+} at_scts_t;
+
+/**
+ * Parse a GSM SCTS timestamp string (3GPP TS 23.040 §9.2.3.11).
+ *
+ * Accepts the canonical form: "yy/MM/dd,hh:mm:ss±zz"
+ * where ±zz is the timezone offset in quarter-hours.
+ *
+ * @param scts_str  NUL-terminated timestamp string.
+ * @param out       Output structure (filled on success).
+ * @return true on success, false if @p scts_str is NULL or malformed.
+ */
+bool at_parse_scts(const char *scts_str, at_scts_t *out);
+
 #ifdef __cplusplus
 }
 #endif

@@ -646,8 +646,152 @@ void test_dial_accepts_star_hash(void)
 }
 
 /* =========================================================================
- * GSM-7 encoder tests
+ * AT+CUSD / AT+CLAC / AT+CEER tests
  * ========================================================================= */
+
+void test_cusd_enqueues_command(void)
+{
+    at_result_t rc = at_gsm_cusd("*100#", 15, NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CUSD=1,\"*100#\",15"));
+}
+
+void test_cusd_null_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_cusd(NULL, 0, NULL, NULL));
+}
+
+void test_cusd_cancel_enqueues_command(void)
+{
+    at_result_t rc = at_gsm_cusd_cancel(NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CUSD=2"));
+}
+
+void test_clac_enqueues_command(void)
+{
+    at_result_t rc = at_gsm_clac(NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CLAC"));
+}
+
+void test_ceer_enqueues_command(void)
+{
+    at_result_t rc = at_gsm_ceer(NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CEER"));
+}
+
+/* =========================================================================
+ * SCTS timestamp parser tests
+ * ========================================================================= */
+
+void test_scts_parse_basic(void)
+{
+    at_scts_t t;
+    bool ok = at_parse_scts("23/06/15,14:30:00+08", &t);
+    TEST_ASSERT_TRUE(ok);
+    TEST_ASSERT_EQUAL_UINT8(23, t.year);
+    TEST_ASSERT_EQUAL_UINT8(6,  t.month);
+    TEST_ASSERT_EQUAL_UINT8(15, t.day);
+    TEST_ASSERT_EQUAL_UINT8(14, t.hour);
+    TEST_ASSERT_EQUAL_UINT8(30, t.minute);
+    TEST_ASSERT_EQUAL_UINT8(0,  t.second);
+    TEST_ASSERT_EQUAL_INT8(8,   t.tz_quarter);
+}
+
+void test_scts_parse_negative_tz(void)
+{
+    at_scts_t t;
+    bool ok = at_parse_scts("24/01/01,00:00:00-20", &t);
+    TEST_ASSERT_TRUE(ok);
+    TEST_ASSERT_EQUAL_UINT8(24, t.year);
+    TEST_ASSERT_EQUAL_UINT8(1,  t.month);
+    TEST_ASSERT_EQUAL_UINT8(1,  t.day);
+    TEST_ASSERT_EQUAL_INT8(-20, t.tz_quarter);
+}
+
+void test_scts_parse_zero_tz(void)
+{
+    at_scts_t t;
+    bool ok = at_parse_scts("22/12/31,23:59:59+00", &t);
+    TEST_ASSERT_TRUE(ok);
+    TEST_ASSERT_EQUAL_UINT8(59, t.second);
+    TEST_ASSERT_EQUAL_INT8(0,   t.tz_quarter);
+}
+
+void test_scts_parse_no_tz(void)
+{
+    at_scts_t t;
+    bool ok = at_parse_scts("22/12/31,23:59:59", &t);
+    TEST_ASSERT_TRUE(ok);
+    TEST_ASSERT_EQUAL_INT8(0, t.tz_quarter);
+}
+
+void test_scts_parse_null_str_returns_false(void)
+{
+    at_scts_t t;
+    TEST_ASSERT_FALSE(at_parse_scts(NULL, &t));
+}
+
+void test_scts_parse_null_out_returns_false(void)
+{
+    TEST_ASSERT_FALSE(at_parse_scts("23/06/15,14:30:00+08", NULL));
+}
+
+void test_scts_parse_invalid_month_returns_false(void)
+{
+    at_scts_t t;
+    TEST_ASSERT_FALSE(at_parse_scts("23/13/01,00:00:00+00", &t));
+}
+
+void test_scts_parse_invalid_day_returns_false(void)
+{
+    at_scts_t t;
+    TEST_ASSERT_FALSE(at_parse_scts("23/06/32,00:00:00+00", &t));
+}
+
+void test_scts_parse_invalid_hour_returns_false(void)
+{
+    at_scts_t t;
+    TEST_ASSERT_FALSE(at_parse_scts("23/06/15,24:00:00+00", &t));
+}
+
+void test_scts_parse_invalid_minute_returns_false(void)
+{
+    at_scts_t t;
+    TEST_ASSERT_FALSE(at_parse_scts("23/06/15,12:60:00+00", &t));
+}
+
+void test_scts_parse_invalid_second_returns_false(void)
+{
+    at_scts_t t;
+    TEST_ASSERT_FALSE(at_parse_scts("23/06/15,12:00:61+00", &t));
+}
+
+void test_scts_parse_malformed_returns_false(void)
+{
+    at_scts_t t;
+    TEST_ASSERT_FALSE(at_parse_scts("not-a-timestamp", &t));
+}
+
+void test_scts_parse_max_tz_plus_48(void)
+{
+    at_scts_t t;
+    bool ok = at_parse_scts("23/06/15,12:00:00+48", &t);
+    TEST_ASSERT_TRUE(ok);
+    TEST_ASSERT_EQUAL_INT8(48, t.tz_quarter);
+}
+
+void test_scts_parse_tz_too_large_returns_false(void)
+{
+    at_scts_t t;
+    TEST_ASSERT_FALSE(at_parse_scts("23/06/15,12:00:00+49", &t));
+}
 
 void test_gsm7_encode_hello(void)
 {
@@ -1241,6 +1385,29 @@ int main(void)
     RUN_TEST(test_cmgd_delete_all_read);
     RUN_TEST(test_dial_accepts_valid_number);
     RUN_TEST(test_dial_accepts_star_hash);
+
+    /* AT+CUSD / AT+CLAC / AT+CEER */
+    RUN_TEST(test_cusd_enqueues_command);
+    RUN_TEST(test_cusd_null_returns_param);
+    RUN_TEST(test_cusd_cancel_enqueues_command);
+    RUN_TEST(test_clac_enqueues_command);
+    RUN_TEST(test_ceer_enqueues_command);
+
+    /* SCTS timestamp parser */
+    RUN_TEST(test_scts_parse_basic);
+    RUN_TEST(test_scts_parse_negative_tz);
+    RUN_TEST(test_scts_parse_zero_tz);
+    RUN_TEST(test_scts_parse_no_tz);
+    RUN_TEST(test_scts_parse_null_str_returns_false);
+    RUN_TEST(test_scts_parse_null_out_returns_false);
+    RUN_TEST(test_scts_parse_invalid_month_returns_false);
+    RUN_TEST(test_scts_parse_invalid_day_returns_false);
+    RUN_TEST(test_scts_parse_invalid_hour_returns_false);
+    RUN_TEST(test_scts_parse_invalid_minute_returns_false);
+    RUN_TEST(test_scts_parse_invalid_second_returns_false);
+    RUN_TEST(test_scts_parse_malformed_returns_false);
+    RUN_TEST(test_scts_parse_max_tz_plus_48);
+    RUN_TEST(test_scts_parse_tz_too_large_returns_false);
 
     /* at_gsm7_encode */
     RUN_TEST(test_gsm7_encode_hello);
