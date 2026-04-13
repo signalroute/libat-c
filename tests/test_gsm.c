@@ -502,6 +502,135 @@ void test_cmgs_pdu_rejects_injection(void)
     TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_cmgs_pdu(NULL, "+1\nATH", "hello", NULL, NULL));
 }
 
+/* =========================================================================
+ * AT+CPMS — phonebook/SMS memory selection
+ * ========================================================================= */
+
+void test_cpms_single_mem(void)
+{
+    at_result_t rc = at_gsm_cpms("SM", NULL, NULL, NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CPMS=\"SM\""));
+}
+
+void test_cpms_two_mems(void)
+{
+    at_result_t rc = at_gsm_cpms("SM", "ME", NULL, NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CPMS=\"SM\",\"ME\""));
+}
+
+void test_cpms_three_mems(void)
+{
+    at_result_t rc = at_gsm_cpms("SM", "ME", "MT", NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CPMS=\"SM\",\"ME\",\"MT\""));
+}
+
+void test_cpms_null_mem1_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_cpms(NULL, NULL, NULL, NULL, NULL));
+}
+
+void test_cpms_empty_mem1_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_cpms("", NULL, NULL, NULL, NULL));
+}
+
+void test_cpms_injection_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_cpms("SM\r\nAT+CLAC", NULL, NULL, NULL, NULL));
+}
+
+/* =========================================================================
+ * AT+CMGL — list SMS messages
+ * ========================================================================= */
+
+void test_cmgl_all(void)
+{
+    at_result_t rc = at_gsm_cmgl(4, NULL, NULL); /* 4=ALL */
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CMGL=4"));
+}
+
+void test_cmgl_unread(void)
+{
+    at_result_t rc = at_gsm_cmgl(0, NULL, NULL); /* 0=REC UNREAD */
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CMGL=0"));
+}
+
+void test_cmgl_sent(void)
+{
+    at_result_t rc = at_gsm_cmgl(3, NULL, NULL); /* 3=STO SENT */
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CMGL=3"));
+}
+
+void test_cmgl_invalid_stat_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_cmgl(5, NULL, NULL));
+}
+
+void test_cmgl_invalid_stat_255_returns_param(void)
+{
+    TEST_ASSERT_EQUAL_INT(AT_ERR_PARAM, at_gsm_cmgl(255, NULL, NULL));
+}
+
+/* =========================================================================
+ * AT+CMGR — read SMS by index
+ * ========================================================================= */
+
+void test_cmgr_index_1(void)
+{
+    at_result_t rc = at_gsm_cmgr(1, NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CMGR=1"));
+}
+
+void test_cmgr_index_255(void)
+{
+    at_result_t rc = at_gsm_cmgr(255, NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CMGR=255"));
+}
+
+/* =========================================================================
+ * AT+CMGD — delete SMS
+ * ========================================================================= */
+
+void test_cmgd_delete_by_index(void)
+{
+    at_result_t rc = at_gsm_cmgd(1, 0, NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CMGD=1,0"));
+}
+
+void test_cmgd_delete_all(void)
+{
+    at_result_t rc = at_gsm_cmgd(1, 4, NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CMGD=1,4"));
+}
+
+void test_cmgd_delete_all_read(void)
+{
+    at_result_t rc = at_gsm_cmgd(0, 1, NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(AT_OK, rc);
+    at_process();
+    TEST_ASSERT_NOT_NULL(strstr(s_tx_buf, "AT+CMGD=0,1"));
+}
+
 void test_dial_accepts_valid_number(void)
 {
     at_result_t rc = at_gsm_dial("+491711234567", true, NULL, NULL);
@@ -1086,6 +1215,30 @@ int main(void)
     RUN_TEST(test_dial_rejects_injection);
     RUN_TEST(test_cmgs_rejects_injection);
     RUN_TEST(test_cmgs_pdu_rejects_injection);
+
+    /* AT+CPMS — SMS/phonebook memory */
+    RUN_TEST(test_cpms_single_mem);
+    RUN_TEST(test_cpms_two_mems);
+    RUN_TEST(test_cpms_three_mems);
+    RUN_TEST(test_cpms_null_mem1_returns_param);
+    RUN_TEST(test_cpms_empty_mem1_returns_param);
+    RUN_TEST(test_cpms_injection_returns_param);
+
+    /* AT+CMGL — list SMS */
+    RUN_TEST(test_cmgl_all);
+    RUN_TEST(test_cmgl_unread);
+    RUN_TEST(test_cmgl_sent);
+    RUN_TEST(test_cmgl_invalid_stat_returns_param);
+    RUN_TEST(test_cmgl_invalid_stat_255_returns_param);
+
+    /* AT+CMGR — read SMS by index */
+    RUN_TEST(test_cmgr_index_1);
+    RUN_TEST(test_cmgr_index_255);
+
+    /* AT+CMGD — delete SMS */
+    RUN_TEST(test_cmgd_delete_by_index);
+    RUN_TEST(test_cmgd_delete_all);
+    RUN_TEST(test_cmgd_delete_all_read);
     RUN_TEST(test_dial_accepts_valid_number);
     RUN_TEST(test_dial_accepts_star_hash);
 

@@ -510,11 +510,29 @@ at_result_t at_gsm_cmgd(uint8_t index, uint8_t delflag, at_cb_t cb, void *user)
     return at_send_raw(AB_DONE(), 25000U, cb, user);
 }
 
-at_result_t at_gsm_cmgl(const char *stat, at_cb_t cb, void *user)
+at_result_t at_gsm_cmgl(uint8_t stat, at_cb_t cb, void *user)
 {
-    if (!stat) return AT_ERR_PARAM;
-    char buf[32]; AB_INIT(buf, sizeof(buf));
-    AB_STR("AT+CMGL="); AB_QSTR(stat);
+    /* stat: 0=REC UNREAD, 1=REC READ, 2=STO UNSENT, 3=STO SENT, 4=ALL */
+    if (stat > 4U) return AT_ERR_PARAM;
+    char buf[16]; AB_INIT(buf, sizeof(buf));
+    AB_STR("AT+CMGL="); AB_U8(stat);
+    if (!AB_OK()) return AT_ERR_PARAM;
+    return at_send_raw(AB_DONE(), 0, cb, user);
+}
+
+at_result_t at_gsm_cpms(const char *mem1, const char *mem2, const char *mem3,
+                         at_cb_t cb, void *user)
+{
+    if (!mem1 || mem1[0] == '\0') return AT_ERR_PARAM;
+    /* Validate all provided storage tags */
+    for (const char *p = mem1; *p; p++) {
+        if ((unsigned char)*p < 0x20 || *p == '"' || *p == '\r' || *p == '\n')
+            return AT_ERR_PARAM;
+    }
+    char buf[48]; AB_INIT(buf, sizeof(buf));
+    AB_STR("AT+CPMS="); AB_QSTR(mem1);
+    if (mem2 && mem2[0] != '\0') { AB_CHAR(','); AB_QSTR(mem2); }
+    if (mem3 && mem3[0] != '\0') { AB_CHAR(','); AB_QSTR(mem3); }
     if (!AB_OK()) return AT_ERR_PARAM;
     return at_send_raw(AB_DONE(), 0, cb, user);
 }
